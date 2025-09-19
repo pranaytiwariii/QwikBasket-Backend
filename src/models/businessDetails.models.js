@@ -12,7 +12,7 @@ const businessDetailsSchema = new Schema({
     businessType: {
         type: String,
         required: true,
-        enum: ['restaurant', 'hotel', 'cafeteria'],
+        enum: ['restaurant', 'hotel', 'cafeteria', 'canteen', 'retailer'],
         // lowercase: true,
         // trim: true
     },

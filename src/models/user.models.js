@@ -5,13 +5,16 @@ const userSchema = new Schema({
         type: String,
         required: true,
         unique: true,
-        match: [/^\d{10}$/, "Please enter a valid 10-digit phone number"]
+        // match: [/^\d{10}$/, "Please enter a valid 10-digit phone number"]
 
     },
     isVerified : {
         type: Boolean,
         default: false
     },
+    refreshToken : {
+        type: String,
+    }
 },{
     timestamps: true
 });
