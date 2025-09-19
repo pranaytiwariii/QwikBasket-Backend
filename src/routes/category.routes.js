@@ -3,7 +3,7 @@ import { getCategories,getCategoryById,createCategory,updateCategory,deleteCateg
 const router=express.Router();
 router.get('/',getCategories);
 router.get('/:id',getCategoryById);
-router.get(':/categoryId/subcategories',getSubcategoriesByCategory);
+router.get('/:categoryId/subcategories',getSubcategoriesByCategory);
 router.post('/',createCategory);
 router.put('/:id',updateCategory);
 router.delete('/:id',deleteCategory);

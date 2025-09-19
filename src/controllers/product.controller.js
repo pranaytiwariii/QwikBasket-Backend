@@ -1,7 +1,7 @@
 // controllers/product.controller.js
-import Product from '../models/product.models.js';
-import Category from '../models/category.models.js';
-import SubCategory from '../models/subcategory.models.js';
+import {Products} from '../models/product.models.js';
+import {Category} from '../models/category.models.js';
+import {SubCategory} from '../models/subcategory.models.js';
 
 // @desc    Get all products with filtering, sorting, and pagination
 // @route   GET /api/products

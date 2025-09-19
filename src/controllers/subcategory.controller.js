@@ -1,6 +1,6 @@
-import SubCategory from "../models/subcategory.models.js";
-import Category from '../models/category.models.js';
-import Product from '../models/product.models.js';
+import {SubCategory} from "../models/subcategory.models.js";
+import {Category} from '../models/category.models.js';
+import {Products} from '../models/product.models.js';
 // @route   GET /api/subcategories
 // @access  Public
 export const getSubCategories=async(req,res)=>{

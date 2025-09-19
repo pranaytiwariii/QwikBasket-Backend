@@ -1,4 +1,5 @@
 import mongoose from "mongoose";
+import { model , Schema} from "mongoose";
 
 const ProductSchema = new mongoose.Schema({
   name: { type: String, required: true }, // "Black Pepper"
@@ -28,4 +29,4 @@ const ProductSchema = new mongoose.Schema({
   createdAt: { type: Date, default: Date.now },
 });
 
-module.exports = mongoose.model("Product", ProductSchema);
+export const Products=model("Product", ProductSchema);

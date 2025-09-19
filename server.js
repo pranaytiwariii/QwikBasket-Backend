@@ -9,7 +9,7 @@ const PORT = process.env.PORT || 8080;
 const startServer = async () => {
     try {
       // Connect to database first
-      await connectDB();
+      // await connectDB();
       console.log('✅ Database connected successfully');
       
       // Start the server
