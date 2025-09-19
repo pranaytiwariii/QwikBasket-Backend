@@ -228,7 +228,7 @@ export const updateItemQuantity = async (req, res) => {
       });
     }
 
-    if (!quantity) {
+    if (quantity===null || quantity===undefined) {
       return res.status(400).json({
         success: false,
         message: "Quantity is required",
@@ -276,14 +276,23 @@ export const updateItemQuantity = async (req, res) => {
     const existingItem = cart.items.find(
       (item) => item.productId.toString() === productId
     );
-    console.log(existingItem);
     if (!existingItem) {
       return res.status(404).json({
         success: false,
         message: "Item not found in cart",
       });
     }
-    
+    if(quantity===0){
+      cart.items = cart.items.filter(
+        (item) => item.productId.toString() !== productId
+      );
+      await calculateCartTotals(cart);
+      return res.status(200).json({
+        success: true,
+        message: "Item removed from cart",
+        cart: await Cart.findOne({ user: userId }).populate("items.productId"),
+      });
+    }
 
     // Check if requested quantity exceeds available stock then just add the available quantity to the cart
     if (quantity > product.quantityAvailable) {
