@@ -147,7 +147,7 @@ export const deleteSubCategory=async(req,res)=>{
             message: 'Subcategory not found'
         });
         }
-        const productsCount = await Product.countDocuments({ subcategory: id });
+        const productsCount = await Products.countDocuments({ subcategory: id });
         if (productsCount > 0) {
         return res.status(400).json({
             success: false,
