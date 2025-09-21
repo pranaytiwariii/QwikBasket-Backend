@@ -53,7 +53,7 @@ export const getProducts = async (req, res) => {
     const skip = (Number(page) - 1) * Number(limit);
 
     // Execute query
-    const products = await Product.find(query)
+    const products = await Products.find(query)
       .populate('category', 'name image')
       .populate('subcategory', 'name')
       .sort(sort)
@@ -62,7 +62,7 @@ export const getProducts = async (req, res) => {
       .lean();
 
     // Get total count for pagination
-    const totalProducts = await Product.countDocuments(query);
+    const totalProducts = await Products.countDocuments(query);
 
     res.status(200).json({
       success: true,
@@ -91,7 +91,7 @@ export const getProductById = async (req, res) => {
   try {
     const { id } = req.params;
     
-    const product = await Product.findById(id)
+    const product = await Products.findById(id)
       .populate('category', 'name image')
       .populate('subcategory', 'name')
       .lean();
@@ -104,7 +104,7 @@ export const getProductById = async (req, res) => {
     }
 
     // Get similar products from the same subcategory (excluding current product)
-    const similarProducts = await Product.find({
+    const similarProducts = await Products.find({
       subcategory: product.subcategory?._id,
       _id: { $ne: id }
     })
@@ -171,7 +171,7 @@ export const getProductsByCategory = async (req, res) => {
 
     const skip = (Number(page) - 1) * Number(limit);
 
-    const products = await Product.find(query)
+    const products = await Products.find(query)
       .populate('category', 'name image')
       .populate('subcategory', 'name')
       .sort(sort)
@@ -179,7 +179,7 @@ export const getProductsByCategory = async (req, res) => {
       .limit(Number(limit))
       .lean();
 
-    const totalProducts = await Product.countDocuments(query);
+    const totalProducts = await Products.countDocuments(query);
 
     res.status(200).json({
       success: true,
@@ -242,7 +242,7 @@ export const getProductsBySubCategory = async (req, res) => {
 
     const skip = (Number(page) - 1) * Number(limit);
 
-    const products = await Product.find(query)
+    const products = await Products.find(query)
       .populate('category', 'name image')
       .populate('subcategory', 'name')
       .sort(sort)
@@ -250,7 +250,7 @@ export const getProductsBySubCategory = async (req, res) => {
       .limit(Number(limit))
       .lean();
 
-    const totalProducts = await Product.countDocuments(query);
+    const totalProducts = await Products.countDocuments(query);
 
     res.status(200).json({
       success: true,
@@ -318,7 +318,7 @@ export const createProduct = async (req, res) => {
       }
     }
 
-    const product = await Product.create({
+    const product = await Products.create({
       name,
       images,
       imageColour,
@@ -359,7 +359,7 @@ export const updateProduct = async (req, res) => {
     const { id } = req.params;
     const updateData = req.body;
 
-    const product = await Product.findById(id);
+    const product = await Products.findById(id);
     if (!product) {
       return res.status(404).json({
         success: false,
@@ -397,7 +397,7 @@ export const updateProduct = async (req, res) => {
       }
     }
 
-    const updatedProduct = await Product.findByIdAndUpdate(
+    const updatedProduct = await Products.findByIdAndUpdate(
       id,
       updateData,
       { new: true, runValidators: true }
@@ -427,7 +427,7 @@ export const deleteProduct = async (req, res) => {
   try {
     const { id } = req.params;
 
-    const product = await Product.findById(id);
+    const product = await Products.findById(id);
     if (!product) {
       return res.status(404).json({
         success: false,
@@ -435,7 +435,7 @@ export const deleteProduct = async (req, res) => {
       });
     }
 
-    await Product.findByIdAndDelete(id);
+    await Products.findByIdAndDelete(id);
 
     res.status(200).json({
       success: true,
@@ -482,14 +482,14 @@ export const searchProducts = async (req, res) => {
 
     const skip = (Number(page) - 1) * Number(limit);
 
-    const products = await Product.find(query)
+    const products = await Products.find(query)
       .populate('category', 'name image')
       .populate('subcategory', 'name')
       .skip(skip)
       .limit(Number(limit))
       .lean();
 
-    const totalProducts = await Product.countDocuments(query);
+    const totalProducts = await Products.countDocuments(query);
 
     res.status(200).json({
       success: true,
