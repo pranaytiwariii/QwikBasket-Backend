@@ -33,7 +33,7 @@ export const getCategories=async (req,res)=>{
 export const getCategoryById=async(req,res)=>{
     try {
         const {id}=req.params;
-        const category=Category.findById(id).lean();
+        const category= await Category.findById(id).lean();
         if(!category)
         {
             return res.status(404).json({
@@ -90,7 +90,7 @@ export const updateCategory=async(req,res)=>{
     try {
         const {id}=req.params;
         const {name,image}=req.body;
-        const category=await Category.findById({id});
+        const category=await Category.findById(id);
         if (!category) {
             return res.status(404).json({
               success: false,
@@ -133,7 +133,7 @@ export const updateCategory=async(req,res)=>{
 export const deleteCategory=async(req,res)=>{
     try {
        const {id}=req.params;
-       const category=await Category.findById({id});
+       const category=await Category.findById(id);
        if (!category) {
         return res.status(404).json({
           success: false,
@@ -148,7 +148,7 @@ export const deleteCategory=async(req,res)=>{
       });
     }
 
-    const productsCount = await Product.countDocuments({ category: id });
+    const productsCount = await Products.countDocuments({ category: id });
     if (productsCount > 0) {
       return res.status(400).json({
         success: false,
