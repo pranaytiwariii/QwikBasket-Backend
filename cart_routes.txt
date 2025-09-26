@@ -1,0 +1,67 @@
+Cart API Endpoints
+
+1. GET /api/cart/:userId
+   When to use: When user opens cart page or needs to display cart items
+   What it does: Retrieves user's cart with all items and calculated totals
+   Required: userId (URL parameter)
+   Response: Cart with items and totals
+
+2. POST /api/cart/add
+   When to use: In + - button of the cart or product component
+   What it does: Add/remove items from cart
+   Required fields:
+   - productId (string)
+   - quantity (number) - positive to add, negative to remove
+   - userId (string)
+   Response: Updated cart
+
+    Example Requests:
+
+    Add item:
+    {
+    "productId": "68cc615176a30cd596eedeae",
+    "quantity": 2,
+    "userId": "68cc688b76a30cd596eedecc"
+    }
+
+    Remove item (quantity -1):
+    {
+    "productId": "68cc615176a30cd596eedeae",
+    "quantity": -1,
+    "userId": "68cc688b76a30cd596eedecc"
+    }
+
+3. PUT /api/cart/update-quantity
+   When to use: When user manually inputs quantity in cart or product component
+   What it does: Sets exact quantity for an item (0 removes the item)
+   Required fields:
+   - productId (string)
+   - quantity (number) - set exact quantity (0 to remove,dont take negatives)
+   - userId (string)
+   Response: Updated cart
+
+    Example Requests:
+
+    Update quantity:
+    {
+    "productId": "68cc615176a30cd596eedeae",
+    "quantity": 3,
+    "userId": "68cc688b76a30cd596eedecc"
+    }
+
+4. DELETE /api/cart/item
+   When to use: When user clicks delete/remove button for specific item
+   What it does: Completely removes item from cart
+   Required fields:
+   - userId (string)
+   - productId (string)
+   Response: Updated cart
+
+Example Requests:
+
+Update quantity:
+{
+  "productId": "68cc615176a30cd596eedeae",
+  "quantity": 3,
+  "userId": "68cc688b76a30cd596eedecc"
+}
