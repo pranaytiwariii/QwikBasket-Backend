@@ -2,6 +2,8 @@ import UserModels from "../models/user.models.js";
 import twilio from 'twilio';
 import dotenv from "dotenv";
 import {generateAccessToken, generateRefreshToken} from "../utils/JWT.js";
+import businessDetailsModels from "../models/businessDetails.models.js";
+import addressModels from "../models/address.models.js";
 
 dotenv.config();
 
@@ -16,10 +18,7 @@ export const sendOtp = async (req,res) => {
     try{
         // user ko check karna , if new to register karna
         const {phone} = req.body;
-        let user = await UserModels.findOne({ phone });
-        if (!user) {
-            user = await UserModels.create({ phone, isVerified: false });
-        }
+
         // otp send karna
         const verification = await client.verify.v2.services(process.env.VERIFICATION_SID)
             .verifications
@@ -29,7 +28,7 @@ export const sendOtp = async (req,res) => {
             success: true,
             message: "OTP sent successfully",
             // data: verification,
-            status: verification.status,
+            // status: verification.status,
         });
     }
     catch (err) {
@@ -42,6 +41,13 @@ export const verifyOtp = async (req,res) => {
     // Logic to verify OTP
     try{
         const {phone, code} = req.body;
+        let user = await UserModels.findOne({ phone });
+        if (!user) {
+            user = await UserModels.create({ phone, isVerified: false });
+        }
+        else {
+            user.status !== "pending" ? "existing" : "pending"
+        }
         // console.log("OTP received:", code);
         const check = await client.verify.v2.services(process.env.VERIFICATION_SID)
             .verificationChecks
@@ -61,7 +67,7 @@ export const verifyOtp = async (req,res) => {
                 message: "User verified successfully",
                 accessToken,
                 refreshToken: user.refreshToken,
-                status: check.status,
+                status: user.status,
             });
         }
         return res.status(400).json({
@@ -97,8 +103,54 @@ export const UserVerification = async (req,res) => {
     }
 }
 
+export const businessDetails = async (req,res) => {
+    const {phone , name , email , businessName , businessType , gstNumber , fssaiLicense } = req.body;
+    try {
+        let user = await UserModels.findOne({phone});
+        if(!user){
+            return res.status(400).json({ success: false, message: "User not found" });
+        }
+        const id = user._id;
+
+        let userD = await businessDetailsModels.create({userId: id , name , email , businessName , businessType , gstNumber , fssaiLicense });
+
+        return res.status(200).json({
+            success: true,
+            message: "Business details registered successfully",
+            data: userD,
+        });
+    } catch (err) {
+        return res.status(400).json({ success: false, error: err.message, data: "Business details registration failed" });
+    }
+}
+
+export const addressDetails = async (req,res) => {
+    const {phone , completeAddress , landmark , pincode , city , state , addressNickname , location  } = req.body;
+
+    try {
+        let user = await UserModels.findOne({phone});
+        if(!user){
+            return res.status(400).json({ success: false, message: "User not found" });
+        }
+        const id = user._id;
+
+        let userD = await addressModels.create({userId: id , completeAddress , landmark , pincode , city , state , addressNickname , location  });
+
+        if (!addressNickname) userD.AddressType = addressNickname;
+
+        return res.status(200).json({
+            success: true,
+            message: "Address details registered successfully",
+            data: userD,
+        });
+    } catch (err) {
+        return res.status(400).json({ success: false, error: err.message, data: "Address details registration failed" });
+    }
+}
+
 export const updateProfile = () => {
     // Logic to update user profile
+
 }
 
 export const getUserDetails = () => {

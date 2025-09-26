@@ -14,6 +14,11 @@ const userSchema = new Schema({
     },
     refreshToken : {
         type: String,
+    },
+    status : {
+        type: String,
+        enum: ['exists', 'pending', 'new'],
+        default: 'new'
     }
 },{
     timestamps: true
