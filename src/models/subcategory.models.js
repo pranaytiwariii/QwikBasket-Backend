@@ -1,5 +1,4 @@
 import mongoose from "mongoose";
-import { model , Schema} from "mongoose";
 
 const SubCategorySchema = new mongoose.Schema({
   name: { type: String, required: true }, //subcategory name
@@ -10,4 +9,4 @@ const SubCategorySchema = new mongoose.Schema({
   },
 });
 
-export const SubCategory=model("SubCategory", SubCategorySchema);
+export default mongoose.model("SubCategory", SubCategorySchema);

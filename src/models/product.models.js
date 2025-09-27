@@ -1,5 +1,4 @@
 import mongoose from "mongoose";
-import { model , Schema} from "mongoose";
 
 const ProductSchema = new mongoose.Schema({
   name: { type: String, required: true }, // "Black Pepper"
@@ -16,9 +15,18 @@ const ProductSchema = new mongoose.Schema({
     ref: "SubCategory", // Links to 'SubCategory' document
   },
 
-  quantityAvailable: { type: Number, required: true },
-  quantity: { type: String, required: true },
-  weightInKg: { type: Number, default: 0 },
+  // The actual number of packs in stock (e.g., 150). For internal stock management.
+  quantityAvailable: {
+    type: Number,
+    required: true,
+  },
+
+  // The display text for the pack size (e.g., "500 gms"). For the customer to see.
+  quantity: {
+    type: String,
+    required: true,
+  },
+  weightInKg: { type: Number, default: 0 }, //for eg if quantity shown is 500gms then weightInKg will be 0.5
   pricePerKg: { type: Number, required: true },
   info: {
     origin: { type: String },
@@ -29,4 +37,4 @@ const ProductSchema = new mongoose.Schema({
   createdAt: { type: Date, default: Date.now },
 });
 
-export const Products=model("Product", ProductSchema);
+export default mongoose.model("Product", ProductSchema);
