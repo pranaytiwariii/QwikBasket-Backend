@@ -23,8 +23,5 @@ app.use('/api/health', (req, res) => {
     res.json({ status: 'OK', message: 'Server is healthy' });
 });
 
-app.use('/api/cart', cartRoutes);
-
-
 
 export default app;
