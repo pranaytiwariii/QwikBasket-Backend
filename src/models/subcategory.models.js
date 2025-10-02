@@ -7,6 +7,7 @@ const SubCategorySchema = new mongoose.Schema({
     ref: "Category", // Links this subcategory to a document in the 'Category' collection
     required: true,
   },
+  image:{type:String,required:true}
 });
 
 export default mongoose.model("SubCategory", SubCategorySchema);

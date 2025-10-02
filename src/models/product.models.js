@@ -28,6 +28,7 @@ const ProductSchema = new mongoose.Schema({
   },
   weightInKg: { type: Number, default: 0 }, //for eg if quantity shown is 500gms then weightInKg will be 0.5
   pricePerKg: { type: Number, required: true },
+  //price to show would be weightInKg*pricePerKg
   info: {
     origin: { type: String },
     hybrid: { type: String },
