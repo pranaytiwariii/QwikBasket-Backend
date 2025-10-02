@@ -10,6 +10,7 @@ const calculateCartTotals = async (cart) => {
     return sum + price * item.quantity;
   }, 0);
   cart.totalAmount = Number((cart.subtotal - cart.couponDiscount).toFixed(2));
+  cart.totalItems = cart.items.reduce((sum, item) => sum + item.quantity, 0);
   await cart.save();
   return cart;
 };
@@ -40,11 +41,12 @@ export const getCart = async (req, res) => {
       });
     }
 
+    const cart = await Cart.findOne({ user: req.params.userId }).populate(
+      "items.productId"
+    );
     res.status(200).json({
       success: true,
-      cart: await Cart.findOne({ user: req.params.userId }).populate(
-        "items.productId"
-      ),
+      cart,
     });
   } catch (err) {
     console.error("Error in getCart:", err);
