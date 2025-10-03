@@ -84,6 +84,7 @@ export const addItemToCart = async (req, res) => {
         message: "User ID is required",
       });
     }
+
     const user = await User.findById(userId);
     if (!user) {
       return res.status(404).json({
@@ -91,6 +92,7 @@ export const addItemToCart = async (req, res) => {
         message: "User not found",
       });
     }
+
     // Find the product
     const product = await Product.findById(productId);
     if (!product) {
@@ -99,14 +101,15 @@ export const addItemToCart = async (req, res) => {
         message: "Product not found",
       });
     }
+
     if (product.quantityAvailable <= 0) {
       return res.status(400).json({
         success: false,
         message: "Product is out of stock",
       });
     }
-    let cart = await Cart.findOne({ user: userId });
 
+    let cart = await Cart.findOne({ user: userId });
     if (!cart) {
       cart = await Cart.create({ user: userId, items: [] });
     }
@@ -115,7 +118,10 @@ export const addItemToCart = async (req, res) => {
     const existingItem = cart.items.find(
       (item) => item.productId.toString() === productId
     );
+
     let removedItem = false;
+    let finalItemQuantity = 0;
+
     if (existingItem) {
       // Handle negative quantity (removing items)
       if (quantity < 0) {
@@ -126,28 +132,27 @@ export const addItemToCart = async (req, res) => {
             (item) => item.productId.toString() !== productId
           );
           removedItem = true;
+          finalItemQuantity = 0;
         } else {
-          // Update quantity
           existingItem.quantity = newQuantity;
+          finalItemQuantity = existingItem.quantity;
         }
       } else {
         // Handle positive quantity (adding items)
-        // Check if already at maximum stock
         if (existingItem.quantity >= product.quantityAvailable) {
           return res.status(400).json({
             success: false,
             message: "You already have the maximum quantity in your cart",
+            cartItemQuantity: existingItem.quantity,
           });
         }
 
-        // Check if adding would exceed stock
         if (existingItem.quantity + quantity > product.quantityAvailable) {
           const toAdd = product.quantityAvailable - existingItem.quantity;
           existingItem.quantity += toAdd;
+          finalItemQuantity = existingItem.quantity;
 
-          // Calculate cart totals
           await calculateCartTotals(cart);
-
           const updatedCart = await Cart.findOne({ user: userId }).populate(
             "items.productId"
           );
@@ -156,9 +161,11 @@ export const addItemToCart = async (req, res) => {
             success: true,
             message: `Only ${toAdd} items were added due to stock limits`,
             cart: updatedCart,
+            cartItemQuantity: finalItemQuantity,
           });
         } else {
           existingItem.quantity += quantity;
+          finalItemQuantity = existingItem.quantity;
         }
       }
     } else {
@@ -171,16 +178,24 @@ export const addItemToCart = async (req, res) => {
       }
       if (product.quantityAvailable < quantity) {
         cart.items.push({ productId, quantity: product.quantityAvailable });
+        finalItemQuantity = product.quantityAvailable;
+
+        await calculateCartTotals(cart);
+        const updatedCart = await Cart.findOne({ user: userId }).populate(
+          "items.productId"
+        );
+
         return res.status(200).json({
           success: true,
           message: `Only ${product.quantityAvailable} items were added due to stock limits`,
-          cart: await Cart.findOne({ user: userId }).populate(
-            "items.productId"
-          ),
+          cart: updatedCart,
+          cartItemQuantity: finalItemQuantity,
         });
       }
+
       // Add new item to cart
       cart.items.push({ productId, quantity });
+      finalItemQuantity = quantity;
     }
 
     // Calculate cart totals
@@ -193,19 +208,19 @@ export const addItemToCart = async (req, res) => {
 
     // Prepare response message
     let message;
-    if (quantity < 0) {
+    if (removedItem) {
+      message = "Deleted the item from cart";
+    } else if (quantity < 0) {
       message = `Removed ${Math.abs(quantity)} item(s) from cart`;
     } else {
       message = `Added ${quantity} item(s) to cart`;
-    }
-    if (removedItem) {
-      message = `Deleted the item from cart`; //because the quantity is zero or negative
     }
 
     res.status(200).json({
       success: true,
       message,
       cart: updatedCart,
+      cartItemQuantity: finalItemQuantity,
     });
   } catch (error) {
     console.error("Error in addItemToCart:", error);
@@ -216,6 +231,8 @@ export const addItemToCart = async (req, res) => {
     });
   }
 };
+
+
 
 // PUT /api/cart/update-quantity
 export const updateItemQuantity = async (req, res) => {
@@ -273,7 +290,6 @@ export const updateItemQuantity = async (req, res) => {
     if (!cart) {
       cart = await Cart.create({ user: userId, items: [] });
     }
-
     // Find existing item in cart
     let existingItem = cart.items.find(
       (item) => item.productId.toString() === productId
@@ -289,18 +305,28 @@ export const updateItemQuantity = async (req, res) => {
         (item) => item.productId.toString() !== productId
       );
       await calculateCartTotals(cart);
+      const updatedCart = await Cart.findOne({ user: userId }).populate("items.productId");
       return res.status(200).json({
         success: true,
         message: "Item removed from cart",
-        cart: await Cart.findOne({ user: userId }).populate("items.productId"),
+        cart: updatedCart,
+        cartItemQuantity:0
       });
     }
 
     // Check if requested quantity exceeds available stock then just add the available quantity to the cart
     if (quantity > product.quantityAvailable) {
-      return res.status(400).json({
-        success: false,
-        message: `Only ${product.quantityAvailable} items available in stock`,
+      existingItem.quantity = product.quantityAvailable;
+      await calculateCartTotals(cart);
+      const updatedCart = await Cart.findOne({ user: userId }).populate(
+        "items.productId"
+      );
+      const finalItemQuantity = product.quantityAvailable;
+      return res.status(200).json({
+        success: true,
+        message: `Only ${product.quantityAvailable} items are in stock. Your cart has been updated.`,
+        cart: updatedCart,
+        cartItemQuantity: finalItemQuantity
       });
     }
 
@@ -319,6 +345,7 @@ export const updateItemQuantity = async (req, res) => {
       success: true,
       message: `Updated the item quantity to ${quantity}`,
       cart: updatedCart,
+      cartItemQuantity: quantity
     });
   } catch (error) {
     console.error("Error in updateItemQuantity:", error);
