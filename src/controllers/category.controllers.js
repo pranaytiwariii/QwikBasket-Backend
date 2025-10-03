@@ -180,10 +180,12 @@ export const getSubcategoriesByCategory=async(req,res)=>{
             message: 'Category not found'
         });
         }
-        const subcategories = await SubCategory.find({ parentCategory: categoryId }).lean();
+      const subcategories = await SubCategory.find({ parentCategory: categoryId }).lean();
+      const products = await Products.find({ category: categoryId }).lean();
         res.status(200).json({
             success: true,
-            data: subcategories
+            subcategories,
+            products
           });
     } catch (error) {
         res.status(500).json({

@@ -23,6 +23,10 @@ const CartSchema = new mongoose.Schema(
       unique: true, // Each user has only one cart
     },
     items: [CartItemSchema],
+    totalItems: {
+      type:Number,
+      default: 0,
+    },
     subtotal: {
       type: Number,
       default: 0,
