@@ -232,8 +232,6 @@ export const addItemToCart = async (req, res) => {
   }
 };
 
-
-
 // PUT /api/cart/update-quantity
 export const updateItemQuantity = async (req, res) => {
   try {
@@ -247,7 +245,7 @@ export const updateItemQuantity = async (req, res) => {
       });
     }
 
-    if (quantity===null || quantity===undefined) {
+    if (quantity === null || quantity === undefined) {
       return res.status(400).json({
         success: false,
         message: "Quantity is required",
@@ -300,17 +298,19 @@ export const updateItemQuantity = async (req, res) => {
         message: "Item not found in cart",
       });
     }
-    if(quantity===0){
+    if (quantity === 0) {
       cart.items = cart.items.filter(
         (item) => item.productId.toString() !== productId
       );
       await calculateCartTotals(cart);
-      const updatedCart = await Cart.findOne({ user: userId }).populate("items.productId");
+      const updatedCart = await Cart.findOne({ user: userId }).populate(
+        "items.productId"
+      );
       return res.status(200).json({
         success: true,
         message: "Item removed from cart",
         cart: updatedCart,
-        cartItemQuantity:0
+        cartItemQuantity: 0,
       });
     }
 
@@ -326,7 +326,7 @@ export const updateItemQuantity = async (req, res) => {
         success: true,
         message: `Only ${product.quantityAvailable} items are in stock. Your cart has been updated.`,
         cart: updatedCart,
-        cartItemQuantity: finalItemQuantity
+        cartItemQuantity: finalItemQuantity,
       });
     }
 
@@ -345,7 +345,7 @@ export const updateItemQuantity = async (req, res) => {
       success: true,
       message: `Updated the item quantity to ${quantity}`,
       cart: updatedCart,
-      cartItemQuantity: quantity
+      cartItemQuantity: quantity,
     });
   } catch (error) {
     console.error("Error in updateItemQuantity:", error);
