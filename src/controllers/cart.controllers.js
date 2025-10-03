@@ -269,13 +269,13 @@ export const updateItemQuantity = async (req, res) => {
     }
 
     // Find cart
-    const cart = await Cart.findOne({ user: userId });
+    let cart = await Cart.findOne({ user: userId });
     if (!cart) {
       cart = await Cart.create({ user: userId, items: [] });
     }
 
     // Find existing item in cart
-    const existingItem = cart.items.find(
+    let existingItem = cart.items.find(
       (item) => item.productId.toString() === productId
     );
     if (!existingItem) {
