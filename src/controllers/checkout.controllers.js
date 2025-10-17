@@ -1,6 +1,7 @@
 import Cart from "../models/cart.models.js";
 import User from "../models/user.models.js";
 import Address from "../models/address.models.js";
+import { toTwoDecimalsNoRound, roundUpTo2 } from "../utils/productUtils.js";
 
 // Helper function to calculate the Delivery fees
 const calculateDeliveryFee = (subtotal) => {
@@ -11,20 +12,20 @@ const calculateDeliveryFee = (subtotal) => {
 };
 // Helper function to calculate checkout summary
 const calculateCheckoutSummary = (cart, deliveryFee = null) => {
-  const subtotal = Number((cart.subtotal || 0).toFixed(2));
-  const couponDiscount = Number((cart.couponDiscount || 0).toFixed(2));
+  const subtotal = toTwoDecimalsNoRound(cart.subtotal || 0);
+  const couponDiscount = toTwoDecimalsNoRound(cart.couponDiscount || 0);
   if (deliveryFee === null) {
     deliveryFee = calculateDeliveryFee(subtotal);
   }
   const baseTotal =
     cart.totalAmount != null
       ? Number(cart.totalAmount)
-      : Number((subtotal - couponDiscount).toFixed(2));
-  const totalAmount = Number((baseTotal + deliveryFee).toFixed(2));
+      : toTwoDecimalsNoRound(subtotal - couponDiscount);
+  const totalAmount = toTwoDecimalsNoRound(baseTotal + deliveryFee);
   return {
     subtotal,
     couponDiscount,
-    deliveryFee: Number(deliveryFee.toFixed(2)),
+    deliveryFee: toTwoDecimalsNoRound(deliveryFee),
     totalAmount,
     totalItems: cart.totalItems != null ? cart.totalItems : cart.items.length,
   };
@@ -77,7 +78,7 @@ export const getCheckoutSummary = async (req, res) => {
             pricePerKg: p?.pricePerKg || 0,
             quantity: item.quantity,
             selectedUnit: item.selectedUnit || "kg",
-            itemTotal: Number((item.price || 0).toFixed(2)),
+            itemTotal: roundUpTo2(item.price || 0),
           };
         }),
         totalItems: summary.totalItems,
@@ -146,7 +147,7 @@ export const validateCheckout = async (req, res) => {
     const stockIssues = [];
     for (const item of cart.items) {
       const product = item.productId;
-      if (product<stockQuantity) {
+      if (!product) {
         stockIssues.push({
           productId: item.productId._id,
           issue: "Product no longer exists",
@@ -221,13 +222,13 @@ export const getDeliveryFee = async (req, res) => {
         message: "Cart is empty",
       });
     }
-    const subtotal = Number((cart.subtotal || 0).toFixed(2));
+    const subtotal = toTwoDecimalsNoRound(cart.subtotal || 0);
     const deliveryFee = calculateDeliveryFee(subtotal);
     res.status(200).json({
       success: true,
       data: {
-        subtotal: Number(subtotal.toFixed(2)),
-        deliveryFee: Number(deliveryFee.toFixed(2)),
+        subtotal: toTwoDecimalsNoRound(subtotal),
+        deliveryFee: toTwoDecimalsNoRound(deliveryFee),
         freeDeliveryThreshold: 500,
         isFreeDelivery: deliveryFee === 0,
       },

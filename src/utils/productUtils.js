@@ -1,27 +1,40 @@
+// Truncate to 2 decimals without rounding
+function toTwoDecimalsNoRound(num) {
+  return Math.trunc(num * 100) / 100;
+}
+
+// Truncate to 3 decimals without rounding
+function toThreeDecimalsNoRound(num) {
+  return Math.trunc(num * 1000) / 1000;
+}
+
+// Round up to 2 decimals
+function roundUpTo2(num) {
+  return Math.ceil(num * 100) / 100;
+}
+
 // Convert quantity from selected unit to kg for storage in database
 function convertQuantityToStorageUnit(quantity, selectedUnit) {
   if (selectedUnit === "gms") {
-    return parseFloat((quantity / 1000).toFixed(2)); // convert grams to kg by dividing
+    return toThreeDecimalsNoRound(quantity / 1000); // convert grams to kg by dividing
   }
   // For kg and ltr, store as-is (assuming ltr is treated same as kg for storage)
-  return parseFloat(quantity.toFixed(2));
+  return toThreeDecimalsNoRound(quantity);
 }
 
 // Convert quantity from storage unit (kg) back to selected unit for display
-  function convertQuantityFromStorageUnit(quantity, selectedUnit) {
-    if (selectedUnit === "gms") {
-      return quantity * 1000; // convert kg to grams by multiplying
-    }
-    // For kg and ltr, return as-is since they're stored in same unit
-    return quantity;
+function convertQuantityFromStorageUnit(quantity, selectedUnit) {
+  if (selectedUnit === "gms") {
+    return quantity * 1000; // convert kg to grams by multiplying
   }
+  // For kg and ltr, return as-is since they're stored in same unit
+  return quantity;
+}
 
 // Calculate price for cart item (price per kg * quantity in kg)
 function calculateCartItemPrice(product, quantity, selectedUnit) {
   const quantityInKg = convertQuantityToStorageUnit(quantity, selectedUnit);
-  console.log("quantityInKg: ", quantityInKg);
-  console.log("product.pricePerKg: ", product.pricePerKg);
-  return Math.round(quantityInKg * product.pricePerKg * 100) / 100;
+  return roundUpTo2(quantityInKg * product.pricePerKg);
 }
 
 // Stock management - convert to kg for storage
@@ -32,8 +45,8 @@ async function updateStock(product, quantity, selectedUnit) {
     throw new Error("Insufficient stock");
   }
 
-  product.stockQuantity = parseFloat(
-    (product.stockQuantity - quantityInKg).toFixed(2)
+  product.stockQuantity = toThreeDecimalsNoRound(
+    product.stockQuantity - quantityInKg
   );
   await product.save();
   return product;
@@ -70,4 +83,7 @@ export {
   convertQuantityToStorageUnit,
   convertQuantityFromStorageUnit,
   calculateCartItemPrice,
+  toTwoDecimalsNoRound,
+  toThreeDecimalsNoRound,
+  roundUpTo2,
 };

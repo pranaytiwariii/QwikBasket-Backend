@@ -3,8 +3,9 @@ import Product from "../models/product.models.js";
 import User from "../models/user.models.js";
 import {
   convertQuantityToStorageUnit,
-  calculateCartItemPrice,
   convertQuantityFromStorageUnit,
+  toThreeDecimalsNoRound,
+  roundUpTo2,
 } from "../utils/productUtils.js";
 
 // Helper function to calculate cart totals
@@ -14,7 +15,9 @@ const calculateCartTotals = async (cart) => {
     const price = item.price;
     return sum + price;
   }, 0);
-  cart.totalAmount = Number((cart.subtotal - cart.couponDiscount).toFixed(3));
+  cart.totalAmount = toThreeDecimalsNoRound(
+    cart.subtotal - cart.couponDiscount
+  );
   cart.totalItems = cart.items.length;
   await cart.save();
   return cart;
@@ -164,18 +167,21 @@ export const addItemToCart = async (req, res) => {
           removedItem = true;
           finalItemQuantity = 0;
         } else {
-          existingItem.quantity = parseFloat(newQuantity.toFixed(3));
+          existingItem.quantity = toThreeDecimalsNoRound(newQuantity);
           existingItem.selectedUnit = unit;
           // Calculate price: use the new stored quantity (already in kg) * pricePerKg
           const quantityInKg = convertQuantityToStorageUnit(
             existingItem.quantity,
             existingItem.selectedUnit
           );
-          const itemPrice = parseFloat(
-            (existingItem.quantity * product.pricePerKg).toFixed(3)
+          const itemPrice = roundUpTo2(
+            existingItem.quantity * product.pricePerKg
           );
           existingItem.price = itemPrice;
-          finalItemQuantity = existingItem.quantity;
+          finalItemQuantity = convertQuantityFromStorageUnit(
+            existingItem.quantity,
+            existingItem.selectedUnit
+          );
         }
       } else {
         if (qtyInStorage < packagingQuantityInStorage) {
@@ -189,22 +195,27 @@ export const addItemToCart = async (req, res) => {
           return res.status(400).json({
             success: false,
             message: "You already have the maximum quantity in your cart",
-            cartItemQuantity: existingItem.quantity,
+            cartItemQuantity: convertQuantityFromStorageUnit(
+              existingItem.quantity,
+              existingItem.selectedUnit
+            ),
           });
         }
 
         if (existingItem.quantity + qtyInStorage > product.stockQuantity) {
           const toAdd = product.stockQuantity - existingItem.quantity;
-          existingItem.quantity = parseFloat(
-            (existingItem.quantity + toAdd).toFixed(3)
+          existingItem.quantity = toThreeDecimalsNoRound(
+            existingItem.quantity + toAdd
           );
           existingItem.selectedUnit = unit;
-
-          const itemPrice = parseFloat(
-            (existingItem.quantity * product.pricePerKg).toFixed(2)
+          const itemPrice = roundUpTo2(
+            existingItem.quantity * product.pricePerKg
           );
           existingItem.price = itemPrice;
-          finalItemQuantity = existingItem.quantity;
+          finalItemQuantity = convertQuantityFromStorageUnit(
+            existingItem.quantity,
+            existingItem.selectedUnit
+          );
           await calculateCartTotals(cart);
           const updatedCart = await Cart.findOne({ user: userId }).populate(
             "items.productId"
@@ -217,15 +228,18 @@ export const addItemToCart = async (req, res) => {
             cartItemQuantity: finalItemQuantity,
           });
         } else {
-          existingItem.quantity = parseFloat(
-            (existingItem.quantity + qtyInStorage).toFixed(3)
+          existingItem.quantity = toThreeDecimalsNoRound(
+            existingItem.quantity + qtyInStorage
           );
           existingItem.selectedUnit = unit;
           // Calculate price: use the new stored quantity (already in kg) * pricePerKg
-          existingItem.price = parseFloat(
-            (existingItem.quantity * product.pricePerKg).toFixed(2)
+          existingItem.price = roundUpTo2(
+            existingItem.quantity * product.pricePerKg
           );
-          finalItemQuantity = existingItem.quantity;
+          finalItemQuantity = convertQuantityFromStorageUnit(
+            existingItem.quantity,
+            existingItem.selectedUnit
+          );
         }
       }
     } else {
@@ -239,16 +253,14 @@ export const addItemToCart = async (req, res) => {
       if (product.stockQuantity < qtyInStorage) {
         const limitedQty = product.stockQuantity;
         // Calculate price: limitedQty is already in storage unit (kg), so multiply directly by pricePerKg
-        const itemPrice = parseFloat(
-          (limitedQty * product.pricePerKg).toFixed(2)
-        );
+        const itemPrice = roundUpTo2(limitedQty * product.pricePerKg);
         cart.items.push({
           productId,
-          quantity: parseFloat(limitedQty.toFixed(3)),
+          quantity: toThreeDecimalsNoRound(limitedQty),
           selectedUnit: unit,
           price: itemPrice,
         });
-        finalItemQuantity = limitedQty; // respond with requested unit quantity
+        finalItemQuantity = convertQuantityFromStorageUnit(limitedQty, unit); // respond with requested unit quantity
 
         await calculateCartTotals(cart);
         const updatedCart = await Cart.findOne({ user: userId }).populate(
@@ -264,17 +276,15 @@ export const addItemToCart = async (req, res) => {
       }
 
       // Add new item to cart
-      const itemPrice = parseFloat(
-        (qtyInStorage * product.pricePerKg).toFixed(2)
-      );
+      const itemPrice = roundUpTo2(qtyInStorage * product.pricePerKg);
       const newItem = {
         productId,
-        quantity: parseFloat(qtyInStorage.toFixed(3)),
+        quantity: toThreeDecimalsNoRound(qtyInStorage),
         selectedUnit: unit,
         price: itemPrice,
       };
       cart.items.push(newItem);
-      finalItemQuantity = qtyInStorage;
+      finalItemQuantity = convertQuantityFromStorageUnit(qtyInStorage, unit);
     }
 
     // Calculate cart totals
@@ -287,7 +297,7 @@ export const addItemToCart = async (req, res) => {
 
     // Prepare response message
     let message;
-    
+
     const unitText = selectedUnit;
     const productName = product.name;
 
@@ -366,8 +376,7 @@ export const updateItemQuantity = async (req, res) => {
       });
     }
     const unit = selectedUnit;
-    
-    
+
     // Find the product
     const product = await Product.findById(productId);
     if (!product) {
@@ -384,7 +393,7 @@ export const updateItemQuantity = async (req, res) => {
         message: "Product is out of stock",
       });
     }
-    
+
     // Find cart
     let cart = await Cart.findOne({ user: userId });
     if (!cart) {
@@ -431,12 +440,10 @@ export const updateItemQuantity = async (req, res) => {
 
     // Check if requested quantity exceeds available stock
     if (qtyInStorage > product.stockQuantity) {
-      existingItem.quantity = parseFloat(product.stockQuantity);
+      existingItem.quantity = product.stockQuantity;
       existingItem.selectedUnit = selectedUnit;
       // Calculate price: use the new stored quantity directly (already in kg) * pricePerKg
-      const itemPrice = parseFloat(
-        (existingItem.quantity * product.pricePerKg).toFixed(2)
-      );
+      const itemPrice = roundUpTo2(existingItem.quantity * product.pricePerKg);
       existingItem.price = itemPrice;
       await calculateCartTotals(cart);
       const updatedCart = await Cart.findOne({ user: userId }).populate(
@@ -446,17 +453,18 @@ export const updateItemQuantity = async (req, res) => {
         success: true,
         message: `Only ${product.stockQuantity}${product.defaultUnit} of ${product.name} are in stock.`,
         cart: updatedCart,
-        cartItemQuantity: existingItem.quantity,
+        cartItemQuantity: convertQuantityFromStorageUnit(
+          existingItem.quantity,
+          selectedUnit
+        ),
       });
     }
 
     // Update quantity and price - set the quantity directly to what user entered
-    existingItem.quantity = parseFloat(qtyInStorage.toFixed(3));
+    existingItem.quantity = toThreeDecimalsNoRound(qtyInStorage);
     existingItem.selectedUnit = selectedUnit;
     // Calculate price: use the new stored quantity directly (already in kg) * pricePerKg
-    const itemPrice = parseFloat(
-      (existingItem.quantity * product.pricePerKg).toFixed(2)
-    );
+    const itemPrice = roundUpTo2(existingItem.quantity * product.pricePerKg);
     existingItem.price = itemPrice;
 
     // Calculate cart totals and save
@@ -466,12 +474,19 @@ export const updateItemQuantity = async (req, res) => {
     const updatedCart = await Cart.findOne({ user: userId }).populate(
       "items.productId"
     );
-
+    let cartItemQuantity1 = existingItem.quantity;
+    if (selectedUnit === "gms") {
+      cartItemQuantity1 *= 1000;
+    }
+    console.log(cartItemQuantity1);
     res.status(200).json({
       success: true,
       message: `Updated ${product.name} quantity to ${quantity}${selectedUnit}`,
       cart: updatedCart,
-      cartItemQuantity: existingItem.quantity,
+      cartItemQuantity: convertQuantityFromStorageUnit(
+        existingItem.quantity,
+        selectedUnit
+      ),
     });
   } catch (error) {
     console.error("Error in updateItemQuantity:", error);
