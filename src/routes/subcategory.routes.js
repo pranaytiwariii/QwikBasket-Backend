@@ -5,11 +5,12 @@ import {
     createSubCategory,
     updateSubCategory,
     deleteSubCategory
-  } from '../controllers/subcategory.controller.js';
+} from '../controllers/subcategory.controller.js';
+import { upload } from '../config/cloudinary.js';
 const router=express.Router();
 router.get('/',getSubCategories);
 router.get('/:id',getSubCategoryById);
-router.post('/',createSubCategory);
-router.put('/:id',updateSubCategory);
+router.post('/',upload.single("image"),createSubCategory);
+router.put('/:id',upload.single("image"),updateSubCategory);
 router.delete('/:id',deleteSubCategory);
 export default router;
