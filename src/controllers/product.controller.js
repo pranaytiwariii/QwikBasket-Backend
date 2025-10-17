@@ -344,8 +344,8 @@ export const createProduct = async (req, res) => {
       imageColour,
       category,
       subcategory,
-      stockQuantity,
-      packagingQuantity,
+      stockQuantity: parseFloat(stockQuantity.toFixed(2)),
+      packagingQuantity: parseFloat(packagingQuantity.toFixed(2)),
       defaultUnit,
       pricePerKg,
       origin,
@@ -434,6 +434,18 @@ export const updateProduct = async (req, res) => {
         newImages.push(uploadResult.secure_url);
       }
       updateData.images = newImages;
+    }
+
+    // Format quantities to 2 decimal places
+    if (updateData.stockQuantity !== undefined) {
+      updateData.stockQuantity = parseFloat(
+        updateData.stockQuantity.toFixed(2)
+      );
+    }
+    if (updateData.packagingQuantity !== undefined) {
+      updateData.packagingQuantity = parseFloat(
+        updateData.packagingQuantity.toFixed(2)
+      );
     }
 
     const updatedProduct = await Products.findByIdAndUpdate(id, updateData, {
