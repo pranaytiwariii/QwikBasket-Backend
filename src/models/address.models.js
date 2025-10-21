@@ -33,7 +33,7 @@ const deliveryAddressSchema = new Schema(
         },
         addressNickname: {
             type: String,
-            enum: ["Home", "Office", "Other"],
+            enum: ["Home", "Work", "Other"],
             default: "Home",
         },
         location: {
@@ -42,7 +42,7 @@ const deliveryAddressSchema = new Schema(
         },
         isDefault: {
             type: Boolean,
-            default: false,
+            default: true,
         },
     },
     { timestamps: true }
