@@ -43,21 +43,18 @@ export const verifyOtp = async (req,res) => {
         const {phone, code} = req.body;
         let user = await UserModels.findOne({ phone });
         if (!user) {
-            user = await UserModels.create({ phone, isVerified: false });
+            user = await UserModels.create({ phone : phone});
         }
-        else {
-            user.status !== "pending" ? "existing" : "pending"
-        }
+
         // console.log("OTP received:", code);
         const check = await client.verify.v2.services(process.env.VERIFICATION_SID)
             .verificationChecks
             .create({ to: phone, code: code });
+
+        console.log(check)
+
         if (check.status === 'approved') {
-            const user = await UserModels.findOneAndUpdate(
-                { phone },
-                { $set: { isVerified: true } },
-                { new: true }
-            );
+            const user = await UserModels.findOne({ phone });
             const accessToken = generateAccessToken({user : user._id, phone: user.phone, isVerified: user.isVerified});
             user.refreshToken = generateRefreshToken({user : user._id, phone: user.phone, isVerified: user.isVerified});
             await user.save();

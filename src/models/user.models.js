@@ -19,7 +19,11 @@ const userSchema = new Schema({
         type: String,
         enum: [ 'new' , 'exists' ,'pending', "approved"],
         default: 'new'
-    }
+    },
+    cart: {
+        type: Schema.Types.ObjectId,
+        ref:"Cart"
+    },
 },{
     timestamps: true
 });

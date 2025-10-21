@@ -1,0 +1,11 @@
+import express from "express";
+import { getCategories,getCategoryById,createCategory,updateCategory,deleteCategory,getSubcategoriesByCategory } from "../controllers/category.controllers.js";
+const router = express.Router();
+import { upload } from '../config/cloudinary.js';
+router.get('/',getCategories);
+router.get('/:id',getCategoryById);
+router.get('/:categoryId/subcategories',getSubcategoriesByCategory);
+router.post('/',upload.single("image"),createCategory);
+router.put('/:id',upload.single("image"),updateCategory);
+router.delete('/:id',deleteCategory);
+export default router;
