@@ -1,7 +1,8 @@
 // controllers/product.controller.js
-import Products from '../models/product.models.js';
-import Category from '../models/category.models.js';
-import SubCategory from '../models/subcategory.models.js';
+import Products from "../models/product.models.js";
+import Category from "../models/category.models.js";
+import SubCategory from "../models/subcategory.models.js";
+import { imageUploadUtil } from "../config/cloudinary.js";
 
 // @desc    Get all products with filtering, sorting, and pagination
 // @route   GET /api/products
@@ -14,10 +15,10 @@ export const getProducts = async (req, res) => {
       search,
       minPrice,
       maxPrice,
-      sortBy = 'createdAt',
-      sortOrder = 'desc',
+      sortBy = "createdAt",
+      sortOrder = "desc",
       page = 1,
-      limit = 10
+      limit = 10,
     } = req.query;
 
     // Build query object
@@ -35,7 +36,7 @@ export const getProducts = async (req, res) => {
 
     // Search by product name
     if (search) {
-      query.name = { $regex: search, $options: 'i' };
+      query.name = { $regex: search, $options: "i" };
     }
 
     // Price range filter
@@ -47,15 +48,15 @@ export const getProducts = async (req, res) => {
 
     // Build sort object
     const sort = {};
-    sort[sortBy] = sortOrder === 'asc' ? 1 : -1;
+    sort[sortBy] = sortOrder === "asc" ? 1 : -1;
 
     // Calculate pagination
     const skip = (Number(page) - 1) * Number(limit);
 
     // Execute query
     const products = await Products.find(query)
-      .populate('category', 'name image')
-      .populate('subcategory', 'name')
+      .populate("category", "name image")
+      .populate("subcategory", "name")
       .sort(sort)
       .skip(skip)
       .limit(Number(limit))
@@ -72,14 +73,14 @@ export const getProducts = async (req, res) => {
         totalPages: Math.ceil(totalProducts / Number(limit)),
         totalProducts,
         hasNextPage: skip + products.length < totalProducts,
-        hasPrevPage: Number(page) > 1
-      }
+        hasPrevPage: Number(page) > 1,
+      },
     });
   } catch (error) {
     res.status(500).json({
       success: false,
-      message: 'Error fetching products',
-      error: error.message
+      message: "Error fetching products",
+      error: error.message,
     });
   }
 };
@@ -90,41 +91,41 @@ export const getProducts = async (req, res) => {
 export const getProductById = async (req, res) => {
   try {
     const { id } = req.params;
-    
+
     const product = await Products.findById(id)
-      .populate('category', 'name image')
-      .populate('subcategory', 'name')
+      .populate("category", "name image")
+      .populate("subcategory", "name")
       .lean();
-      
+
     if (!product) {
       return res.status(404).json({
         success: false,
-        message: 'Product not found'
+        message: "Product not found",
       });
     }
 
     // Get similar products from the same subcategory (excluding current product)
     const similarProducts = await Products.find({
       subcategory: product.subcategory?._id,
-      _id: { $ne: id }
+      _id: { $ne: id },
     })
-    .populate('category', 'name image')
-    .populate('subcategory', 'name')
-    .limit(6)
-    .lean();
+      .populate("category", "name image")
+      .populate("subcategory", "name")
+      .limit(6)
+      .lean();
 
     res.status(200).json({
       success: true,
       data: {
         ...product,
-        similarProducts
-      }
+        similarProducts,
+      },
     });
   } catch (error) {
     res.status(500).json({
       success: false,
-      message: 'Error fetching product',
-      error: error.message
+      message: "Error fetching product",
+      error: error.message,
     });
   }
 };
@@ -140,10 +141,10 @@ export const getProductsByCategory = async (req, res) => {
       search,
       minPrice,
       maxPrice,
-      sortBy = 'createdAt',
-      sortOrder = 'desc',
+      sortBy = "createdAt",
+      sortOrder = "desc",
       page = 1,
-      limit = 10
+      limit = 10,
     } = req.query;
 
     // Check if category exists
@@ -151,7 +152,7 @@ export const getProductsByCategory = async (req, res) => {
     if (!category) {
       return res.status(404).json({
         success: false,
-        message: 'Category not found'
+        message: "Category not found",
       });
     }
 
@@ -159,7 +160,7 @@ export const getProductsByCategory = async (req, res) => {
     const query = { category: categoryId };
 
     if (subcategory) query.subcategory = subcategory;
-    if (search) query.name = { $regex: search, $options: 'i' };
+    if (search) query.name = { $regex: search, $options: "i" };
     if (minPrice || maxPrice) {
       query.pricePerKg = {};
       if (minPrice) query.pricePerKg.$gte = Number(minPrice);
@@ -167,13 +168,13 @@ export const getProductsByCategory = async (req, res) => {
     }
 
     const sort = {};
-    sort[sortBy] = sortOrder === 'asc' ? 1 : -1;
+    sort[sortBy] = sortOrder === "asc" ? 1 : -1;
 
     const skip = (Number(page) - 1) * Number(limit);
 
     const products = await Products.find(query)
-      .populate('category', 'name image')
-      .populate('subcategory', 'name')
+      .populate("category", "name image")
+      .populate("subcategory", "name")
       .sort(sort)
       .skip(skip)
       .limit(Number(limit))
@@ -190,14 +191,14 @@ export const getProductsByCategory = async (req, res) => {
         totalPages: Math.ceil(totalProducts / Number(limit)),
         totalProducts,
         hasNextPage: skip + products.length < totalProducts,
-        hasPrevPage: Number(page) > 1
-      }
+        hasPrevPage: Number(page) > 1,
+      },
     });
   } catch (error) {
     res.status(500).json({
       success: false,
-      message: 'Error fetching products by category',
-      error: error.message
+      message: "Error fetching products by category",
+      error: error.message,
     });
   }
 };
@@ -212,25 +213,27 @@ export const getProductsBySubCategory = async (req, res) => {
       search,
       minPrice,
       maxPrice,
-      sortBy = 'createdAt',
-      sortOrder = 'desc',
+      sortBy = "createdAt",
+      sortOrder = "desc",
       page = 1,
-      limit = 10
+      limit = 10,
     } = req.query;
 
     // Check if subcategory exists
-    const subcategory = await SubCategory.findById(subcategoryId).populate('parentCategory');
+    const subcategory = await SubCategory.findById(subcategoryId).populate(
+      "parentCategory"
+    );
     if (!subcategory) {
       return res.status(404).json({
         success: false,
-        message: 'Subcategory not found'
+        message: "Subcategory not found",
       });
     }
 
     // Build query
     const query = { subcategory: subcategoryId };
 
-    if (search) query.name = { $regex: search, $options: 'i' };
+    if (search) query.name = { $regex: search, $options: "i" };
     if (minPrice || maxPrice) {
       query.pricePerKg = {};
       if (minPrice) query.pricePerKg.$gte = Number(minPrice);
@@ -238,13 +241,13 @@ export const getProductsBySubCategory = async (req, res) => {
     }
 
     const sort = {};
-    sort[sortBy] = sortOrder === 'asc' ? 1 : -1;
+    sort[sortBy] = sortOrder === "asc" ? 1 : -1;
 
     const skip = (Number(page) - 1) * Number(limit);
 
     const products = await Products.find(query)
-      .populate('category', 'name image')
-      .populate('subcategory', 'name')
+      .populate("category", "name image")
+      .populate("subcategory", "name")
       .sort(sort)
       .skip(skip)
       .limit(Number(limit))
@@ -261,14 +264,14 @@ export const getProductsBySubCategory = async (req, res) => {
         totalPages: Math.ceil(totalProducts / Number(limit)),
         totalProducts,
         hasNextPage: skip + products.length < totalProducts,
-        hasPrevPage: Number(page) > 1
-      }
+        hasPrevPage: Number(page) > 1,
+      },
     });
   } catch (error) {
     res.status(500).json({
       success: false,
-      message: 'Error fetching products by subcategory',
-      error: error.message
+      message: "Error fetching products by subcategory",
+      error: error.message,
     });
   }
 };
@@ -280,15 +283,17 @@ export const createProduct = async (req, res) => {
   try {
     const {
       name,
-      images,
       imageColour,
       category,
       subcategory,
-      quantityAvailable,
-      quantity,
-      weightInKg,
+      stockQuantity,
+      packagingQuantity,
+      defaultUnit,
       pricePerKg,
-      info
+      origin,
+      hybrid,
+      sellerFssai,
+      description,
     } = req.body;
 
     // Check if category exists
@@ -296,7 +301,7 @@ export const createProduct = async (req, res) => {
     if (!categoryExists) {
       return res.status(404).json({
         success: false,
-        message: 'Category not found'
+        message: "Category not found",
       });
     }
 
@@ -306,16 +311,31 @@ export const createProduct = async (req, res) => {
       if (!subcategoryExists) {
         return res.status(404).json({
           success: false,
-          message: 'Subcategory not found'
+          message: "Subcategory not found",
         });
       }
-      
+
       if (subcategoryExists.parentCategory.toString() !== category) {
         return res.status(400).json({
           success: false,
-          message: 'Subcategory does not belong to the specified category'
+          message: "Subcategory does not belong to the specified category",
         });
       }
+    }
+
+    // Handle image uploads
+    let images = [];
+    if (req.files && req.files.length > 0) {
+      for (const file of req.files) {
+        const b64 = Buffer.from(file.buffer).toString("base64");
+        const url = "data:" + file.mimetype + ";base64," + b64;
+        const uploadResult = await imageUploadUtil(url);
+        images.push(uploadResult.secure_url);
+      }
+    } else {
+      return res
+        .status(400)
+        .json({ message: "At least one product image is required" });
     }
 
     const product = await Products.create({
@@ -324,29 +344,32 @@ export const createProduct = async (req, res) => {
       imageColour,
       category,
       subcategory,
-      quantityAvailable,
-      quantity,
-      weightInKg,
+      stockQuantity,
+      packagingQuantity,
+      defaultUnit,
       pricePerKg,
-      info
+      origin,
+      hybrid,
+      sellerFssai,
+      description,
     });
 
     // Populate the created product
     await product.populate([
-      { path: 'category', select: 'name image' },
-      { path: 'subcategory', select: 'name' }
+      { path: "category", select: "name image" },
+      { path: "subcategory", select: "name" },
     ]);
 
     res.status(201).json({
       success: true,
       data: product,
-      message: 'Product created successfully'
+      message: "Product created successfully",
     });
   } catch (error) {
     res.status(500).json({
       success: false,
-      message: 'Error creating product',
-      error: error.message
+      message: "Error creating product",
+      error: error.message,
     });
   }
 };
@@ -363,7 +386,7 @@ export const updateProduct = async (req, res) => {
     if (!product) {
       return res.status(404).json({
         success: false,
-        message: 'Product not found'
+        message: "Product not found",
       });
     }
 
@@ -373,49 +396,71 @@ export const updateProduct = async (req, res) => {
       if (!categoryExists) {
         return res.status(404).json({
           success: false,
-          message: 'Category not found'
+          message: "Category not found",
         });
       }
     }
 
     // If subcategory is being updated, check if it exists and belongs to category
     if (updateData.subcategory) {
-      const subcategoryExists = await SubCategory.findById(updateData.subcategory);
+      const subcategoryExists = await SubCategory.findById(
+        updateData.subcategory
+      );
       if (!subcategoryExists) {
         return res.status(404).json({
           success: false,
-          message: 'Subcategory not found'
+          message: "Subcategory not found",
         });
       }
-      
+
       const categoryId = updateData.category || product.category;
-      if (subcategoryExists.parentCategory.toString() !== categoryId.toString()) {
+      if (
+        subcategoryExists.parentCategory.toString() !== categoryId.toString()
+      ) {
         return res.status(400).json({
           success: false,
-          message: 'Subcategory does not belong to the specified category'
+          message: "Subcategory does not belong to the specified category",
         });
       }
     }
 
-    const updatedProduct = await Products.findByIdAndUpdate(
-      id,
-      updateData,
-      { new: true, runValidators: true }
-    ).populate([
-      { path: 'category', select: 'name image' },
-      { path: 'subcategory', select: 'name' }
+    // Handle image uploads if files are provided
+    if (req.files && req.files.length > 0) {
+      let newImages = [];
+      for (const file of req.files) {
+        const b64 = Buffer.from(file.buffer).toString("base64");
+        const url = "data:" + file.mimetype + ";base64," + b64;
+        const uploadResult = await imageUploadUtil(url);
+        newImages.push(uploadResult.secure_url);
+      }
+      updateData.images = newImages;
+    }
+
+    if (updateData.stockQuantity !== undefined) {
+      updateData.stockQuantity = updateData.stockQuantity;
+    }
+    if (updateData.packagingQuantity !== undefined) {
+      updateData.packagingQuantity = updateData.packagingQuantity;
+    }
+
+    const updatedProduct = await Products.findByIdAndUpdate(id, updateData, {
+      new: true,
+      runValidators: true,
+    }).populate([
+      { path: "category", select: "name image" },
+      { path: "subcategory", select: "name" },
     ]);
 
     res.status(200).json({
       success: true,
       data: updatedProduct,
-      message: 'Product updated successfully'
+      message: "Product updated successfully",
     });
   } catch (error) {
     res.status(500).json({
       success: false,
-      message: 'Error updating product',
-      error: error.message
+      message: "Error updating product",
+      error: error.message,
     });
   }
 };
@@ -431,7 +476,7 @@ export const deleteProduct = async (req, res) => {
     if (!product) {
       return res.status(404).json({
         success: false,
-        message: 'Product not found'
+        message: "Product not found",
       });
     }
 
@@ -439,13 +484,13 @@ export const deleteProduct = async (req, res) => {
 
     res.status(200).json({
       success: true,
-      message: 'Product deleted successfully'
+      message: "Product deleted successfully",
     });
   } catch (error) {
     res.status(500).json({
       success: false,
-      message: 'Error deleting product',
-      error: error.message
+      message: "Error deleting product",
+      error: error.message,
     });
   }
 };
@@ -455,21 +500,29 @@ export const deleteProduct = async (req, res) => {
 // @access  Public
 export const searchProducts = async (req, res) => {
   try {
-    const { q, category, subcategory, minPrice, maxPrice, page = 1, limit = 10 } = req.query;
+    const {
+      q,
+      category,
+      subcategory,
+      minPrice,
+      maxPrice,
+      page = 1,
+      limit = 10,
+    } = req.query;
 
     if (!q) {
       return res.status(400).json({
         success: false,
-        message: 'Search query is required'
+        message: "Search query is required",
       });
     }
 
     // Build search query
     const query = {
       $or: [
-        { name: { $regex: q, $options: 'i' } },
-        { 'info.description': { $regex: q, $options: 'i' } }
-      ]
+        { name: { $regex: q, $options: "i" } },
+        { "info.description": { $regex: q, $options: "i" } },
+      ],
     };
 
     if (category) query.category = category;
@@ -483,8 +536,8 @@ export const searchProducts = async (req, res) => {
     const skip = (Number(page) - 1) * Number(limit);
 
     const products = await Products.find(query)
-      .populate('category', 'name image')
-      .populate('subcategory', 'name')
+      .populate("category", "name image")
+      .populate("subcategory", "name")
       .skip(skip)
       .limit(Number(limit))
       .lean();
@@ -500,14 +553,14 @@ export const searchProducts = async (req, res) => {
         totalPages: Math.ceil(totalProducts / Number(limit)),
         totalProducts,
         hasNextPage: skip + products.length < totalProducts,
-        hasPrevPage: Number(page) > 1
-      }
+        hasPrevPage: Number(page) > 1,
+      },
     });
   } catch (error) {
     res.status(500).json({
       success: false,
-      message: 'Error searching products',
-      error: error.message
+      message: "Error searching products",
+      error: error.message,
     });
   }
 };

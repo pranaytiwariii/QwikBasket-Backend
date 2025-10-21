@@ -1,4 +1,5 @@
 import mongoose from "mongoose";
+import Product from "./product.models.js";
 
 const CartItemSchema = new mongoose.Schema({
   productId: {
@@ -7,10 +8,15 @@ const CartItemSchema = new mongoose.Schema({
     required: true,
   },
   quantity: {
+    //this will be the quantity in kg. All quantities are stored in kg in the database
     type: Number,
     required: true,
-    min: [1, "Quantity can not be less than 1."],
-    default: 1,
+  },
+  selectedUnit: { type: String, enum: ["gms", "kg", "ltr"], required: true }, // UI-selected unit.
+  price: {
+    //this will be the price per kg * quantity in kg (calculated and stored when item is added)
+    type: Number,
+    required: true,
   },
 });
 
@@ -24,7 +30,7 @@ const CartSchema = new mongoose.Schema(
     },
     items: [CartItemSchema],
     totalItems: {
-      type:Number,
+      type: Number,
       default: 0,
     },
     subtotal: {
