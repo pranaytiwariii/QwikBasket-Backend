@@ -114,6 +114,9 @@ export const businessDetails = async (req,res) => {
 
         let userD = await businessDetailsModels.create({userId: id , name , email , businessName , businessType , gstNumber , fssaiLicense });
 
+        user.status = "exists";
+        await user.save();
+
         return res.status(200).json({
             success: true,
             message: "Business details registered successfully",
@@ -135,7 +138,8 @@ export const addressDetails = async (req,res) => {
         const id = user._id;
 
         let userD = await addressModels.create({userId: id , completeAddress , landmark , pincode , city , state , addressNickname , location  });
-
+        user.status = "pending";
+        await user.save();
         if (!addressNickname) userD.AddressType = addressNickname;
 
         return res.status(200).json({

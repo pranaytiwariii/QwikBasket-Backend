@@ -39,7 +39,6 @@ export const refreshToken = async (req, res) => {
         if (!user || user.refreshToken !== token) {
             return res.status(403).json({ message: "Invalid refresh token" });
         }
-
         const newAccessToken = jwt.sign(
             { userId: user._id, phone: user.phone },
             process.env.JWT_SECRET,

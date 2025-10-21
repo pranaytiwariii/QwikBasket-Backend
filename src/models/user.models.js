@@ -17,7 +17,7 @@ const userSchema = new Schema({
     },
     status : {
         type: String,
-        enum: ['exists', 'pending', 'new'],
+        enum: [ 'new' , 'exists' ,'pending', "approved"],
         default: 'new'
     }
 },{
