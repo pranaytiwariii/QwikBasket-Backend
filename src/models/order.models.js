@@ -59,6 +59,10 @@ const OrderSchema=new Schema({
         state: { type: String, required: true },
         landmark: { type: String },
     },
+    shippingMethod: {
+        type: String,
+        default: "Standard" 
+    },
     paymentDetails:{
         paymentMethod:{
             type:String,
@@ -72,6 +76,9 @@ const OrderSchema=new Schema({
             enum: ["Pending", "Completed", "Failed", "Refunded"],
             default:"Pending"
         },
+        paymentInfo: { 
+            type: String 
+        }
     },
     status:{
         type:String,
