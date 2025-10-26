@@ -1,32 +1,24 @@
 import UserModels from "../models/user.models.js";
 import jwt from "jsonwebtoken";
 
-export const checkAuth = async (req, res, next) => {
+export const verifyToken = async (req, res, next) => {
+    const authHeader = req.headers.authorization;
+
+    if (!authHeader || !authHeader.startsWith("Bearer ")) {
+        return res.status(401).json({ success: false, message: "Access token missing or malformed" });
+    }
+
+    const token = authHeader.split(" ")[1];
+
     try {
-        const token = req.cookies.jwt || req.headers.authorization?.split(" ")[1];
-        if (!token) {
-            return res.status(401).json({ message: "Unauthorized" });
-        }
-
-        const decoded = jwt.verify(token, process.env.JWT_SECRET);
-
-        if (!decoded) {
-            return res.status(401).json({ message: "Invalid Token" });
-        }
-
-        const user = await UserModels.findById(decoded?._id)
-
-        if (!user) return res.status(401).json({ message: "User not found" });
-
-        req.user = user;
+        const decoded = jwt.verify(token, process.env.ACCESS_TOKEN_SECRET);
+        req.user = decoded;
         next();
-    } catch (error) {
-        console.error("Authentication error:", error);
-        return res
-            .status(500)
-            .json({ message: "Internal Server Error", error: error.message });
+    } catch (err) {
+        return res.status(403).json({ success: false, message: "Invalid or expired access token" });
     }
 };
+
 
 export const refreshToken = async (req, res) => {
     const { token } = req.body;
@@ -41,15 +33,36 @@ export const refreshToken = async (req, res) => {
         }
         const newAccessToken = jwt.sign(
             { userId: user._id, phone: user.phone },
-            process.env.JWT_SECRET,
+            process.env.ACCESS_TOKEN_SECRET,
             { expiresIn: "15m" }
         );
 
         req.user = user;
 
-        return res.status(200).json({ accessToken: newAccessToken });
+        return res.status(200).json({
+            success: true,
+            message: "Access token refreshed successfully",
+            accessToken: newAccessToken,
+            expiresIn: "15m",
+        });
     } catch (err) {
         return res.status(403).json({ message: "Invalid or expired refresh token" });
     }
 };
+
+// 👑 Middleware to verify admin privileges
+export const verifyAdmin = async (req, res, next) => {
+    try {
+        if (!req.user) {
+            return res.status(401).json({ success: false, message: "Unauthorized access" });
+        }
+        if (req.user.userType !== "admin") {
+            return res.status(403).json({ success: false, message: "Admin privileges required" });
+        }
+        next();
+    } catch (err) {
+        return res.status(500).json({ success: false, message: "Server error verifying admin" });
+    }
+};
+
 

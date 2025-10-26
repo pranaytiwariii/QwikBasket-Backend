@@ -12,6 +12,11 @@ const userSchema = new Schema({
         type: Boolean,
         default: false
     },
+    userType: {
+        type: String,
+        enum: ["user", "admin"],
+        default: "user"
+    },
     refreshToken : {
         type: String,
     },

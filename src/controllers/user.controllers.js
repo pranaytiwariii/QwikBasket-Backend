@@ -20,9 +20,9 @@ export const sendOtp = async (req,res) => {
         const {phone} = req.body;
 
         // otp send karna
-        const verification = await client.verify.v2.services(process.env.VERIFICATION_SID)
-            .verifications
-            .create({ to: phone, channel: 'sms' });
+        // const verification = await client.verify.v2.services(process.env.VERIFICATION_SID)
+        //     .verifications
+        //     .create({ to: phone, channel: 'sms' });
 
         return res.status(200).json({
             success: true,
@@ -47,30 +47,48 @@ export const verifyOtp = async (req,res) => {
         }
 
         // console.log("OTP received:", code);
-        const check = await client.verify.v2.services(process.env.VERIFICATION_SID)
-            .verificationChecks
-            .create({ to: phone, code: code });
+        // const check = await client.verify.v2.services(process.env.VERIFICATION_SID)
+        //     .verificationChecks
+        //     .create({ to: phone, code: code });
+        //
 
-        console.log(check)
-
-        if (check.status === 'approved') {
+        // if (check.status === 'approved')
+        if (code === "123456"){ // For testing purposes, accept "123456" as valid OTP{
             const user = await UserModels.findOne({ phone });
-            const accessToken = generateAccessToken({user : user._id, phone: user.phone, isVerified: user.isVerified});
-            user.refreshToken = generateRefreshToken({user : user._id, phone: user.phone, isVerified: user.isVerified});
+            const payload = {
+                user: user._id,
+                phone: user.phone,
+                isVerified: user.isVerified,
+                userType: user.userType,
+            };
+
+            const accessToken = generateAccessToken(payload);
+            const refreshToken = generateRefreshToken(payload);
+            user.refreshToken = refreshToken;
             await user.save();
 
-            return res.status(200).json({
+            return res.status(200).cookie("accessToken", accessToken, {
+                httpOnly: true,
+                secure: process.env.NODE_ENV === "production",
+                sameSite: "Strict",
+                maxAge: 15 * 60 * 1000,
+            }).cookie("refreshToken", refreshToken, {
+                httpOnly: true,
+                secure: process.env.NODE_ENV === "production",
+                sameSite: "Strict",
+                maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
+            }).json({
                 success: true,
                 message: "User verified successfully",
                 accessToken,
-                refreshToken: user.refreshToken,
+                refreshToken,
                 status: user.status,
             });
         }
         return res.status(400).json({
             success: false,
             message: "Invalid OTP",
-            status: check.status,
+            // status: check.status,
         });
     }
     catch (err) {
@@ -80,9 +98,17 @@ export const verifyOtp = async (req,res) => {
 
 export const UserVerification = async (req,res) => {
     try {
-        const {phone} = req.body;
+        const { phone } = req.params;
+
+        if (!phone) {
+            return res.status(400).json({ success: false, message: "Phone number is required" });
+        }
+
         const user = await UserModels.findOne({phone});
-        if (user && user.isVerified) {
+        if (!user) {
+            return res.status(400).json({ success: false, message: "User not found" });
+        }
+        if (user.isVerified) {
             return res.status(200).json({
                 success: true,
                 message: "User is verified",
