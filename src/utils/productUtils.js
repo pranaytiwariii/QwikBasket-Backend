@@ -1,22 +1,16 @@
 // Truncate to 2 decimals without rounding
 function toTwoDecimalsNoRound(num) {
-  // Handle floating point precision issues by first rounding to 3 decimals
-  const rounded = Math.round(num * 1000) / 1000;
-  return Math.trunc(rounded * 100) / 100;
+  return Math.trunc(num * 100) / 100;
 }
 
 // Truncate to 3 decimals without rounding
 function toThreeDecimalsNoRound(num) {
-  // Handle floating point precision issues by first rounding to 4 decimals
-  const rounded = Math.round(num * 10000) / 10000;
-  return Math.trunc(rounded * 1000) / 1000;
+  return Math.trunc(num * 1000) / 1000;
 }
 
 // Round up to 2 decimals
 function roundUpTo2(num) {
-  // Handle floating point precision issues by first rounding to 3 decimals
-  const rounded = Math.round(num * 1000) / 1000;
-  return Math.ceil(rounded * 100) / 100;
+  return Math.ceil(num * 100) / 100;
 }
 
 // Convert quantity from selected unit to kg for storage in database
@@ -40,10 +34,7 @@ function convertQuantityFromStorageUnit(quantity, selectedUnit) {
 // Calculate price for cart item (price per kg * quantity in kg)
 function calculateCartItemPrice(product, quantity, selectedUnit) {
   const quantityInKg = convertQuantityToStorageUnit(quantity, selectedUnit);
-  // Handle floating point precision issues in price calculation
-  const rawPrice = quantityInKg * product.pricePerKg;
-  // Round to 2 decimal places (not round up) for accurate pricing
-  return Math.round(rawPrice * 100) / 100;
+  return roundUpTo2(quantityInKg * product.pricePerKg);
 }
 
 // Stock management - convert to kg for storage
