@@ -1,6 +1,6 @@
-import Cart from "../models/cart.models";
-import User from "../models/user.models";
-import Address from "../models/address.models";
+import Cart from "../models/cart.models.js";
+import User from "../models/user.models.js";
+import Address from "../models/address.models.js";
 
 // Helper function to calculate the Delivery fees
 const calculateDeliveryFee=(subtotal)=>{
@@ -78,8 +78,8 @@ export const getCheckoutSummary=async(req,res)=>{
             },
             deliveryAddress: defaultAddress || null,
             cart: {
-              items: cart.items.map(item => ({
-                productId: item.productId._id,
+                items: cart.items.filter(item => item.productId).map(item => ({
+                productId: item.productId._id || "unknown",
                 name: item.productId.name,
                 image: item.productId.images?.[0] || null,
                 pricePerKg: item.productId.pricePerKg,
@@ -159,11 +159,11 @@ export const validateCheckout=async(req,res)=>{
         const stockIssues=[];
         for(const item of cart.items)
             {
-                const product=item.productId;
+                const product=item.productId || "unknown";
                 if(!product)
                     {
                         stockIssues.push({
-                            productId:item.productId._id,
+                            productId:item.productId._id || "unknown",
                             issue:"Product no longer exists"
                         });
                         continue;
@@ -171,7 +171,7 @@ export const validateCheckout=async(req,res)=>{
                 if(product.quantityAvailable<=0)
                     {
                         stockIssues.push({
-                            productId:product._id,
+                            productId:product._id || "unknown",
                             productName:product.name,
                             issue:"Out of stock"
                         });
@@ -179,7 +179,7 @@ export const validateCheckout=async(req,res)=>{
                 else if(item.quantity> product.quantityAvailable)
                     {
                         stockIssues.push({
-                            productId:product._id,
+                            productId:product._id || "unknown",
                             productName:product.name,
                             issue:`Only ${product.quantityAvailable} items available, but ${item.quantity} in cart`
                         })
