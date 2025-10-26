@@ -53,13 +53,19 @@ export const getCheckoutSummary=async(req,res)=>{
                 })
             }
         const cart=await Cart.findOne({user:userId}).populate("items.productId");
-        if(!cart || cart.items.length==0)
-            {
-                return res.status(400).json({
-                    success:false,
-                    message:"Cart is empty. Please add items to proceed to checkout."
-                });
-            }
+        if (!cart) {
+            return res.status(400).json({
+              success: false,
+              message: "Cart is empty. Please add items to proceed to checkout.",
+            });
+          }
+          
+          if (cart.items.length === 0) {
+            return res.status(400).json({
+              success: false,
+              message: "Cart has no items.",
+            });
+          }
         const defaultAddress=await Address.findOne({
             user:userId,
             isDefault:true
@@ -137,10 +143,17 @@ export const validateCheckout=async(req,res)=>{
           }
           const cart = await Cart.findOne({ user: userId }).populate("items.productId");
     
-        if (!cart || cart.items.length === 0) {
+          if (!cart) {
             return res.status(400).json({
               success: false,
-              message: "Cart is empty"
+              message: "Cart is empty. Please add items to proceed to checkout.",
+            });
+          }
+          
+          if (cart.items.length === 0) {
+            return res.status(400).json({
+              success: false,
+              message: "Cart has no items.",
             });
           }
         const stockIssues=[];
@@ -217,10 +230,17 @@ export const getDeliveryFee=async(req,res)=>{
           }
         const cart = await Cart.findOne({ user: userId }).populate("items.productId");
     
-          if (!cart || cart.items.length === 0) {
+        if (!cart) {
             return res.status(400).json({
               success: false,
-              message: "Cart is empty"
+              message: "Cart is empty. Please add items to proceed to checkout.",
+            });
+          }
+          
+          if (cart.items.length === 0) {
+            return res.status(400).json({
+              success: false,
+              message: "Cart has no items.",
             });
           }
         const subtotal = cart.items.reduce((sum, item) => {
