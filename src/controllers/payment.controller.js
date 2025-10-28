@@ -5,6 +5,8 @@ import Order from "../models/order.models.js"
 import Address from "../models/address.models.js"
 import Cart from "../models/cart.models.js"
 import Product from "../models/product.models.js"
+import dotenv from "dotenv";
+dotenv.config();
 
 
 const generateOrderId = async () => {
