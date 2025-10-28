@@ -150,6 +150,27 @@ export const businessDetails = async (req,res) => {
     }
 }
 
+export const getBusinessDetails = async (req,res) => {
+    const {phone} = req.params;
+    try {
+        let user = await UserModels.findOne({phone});
+        if(!user){
+            return res.status(400).json({ success: false, message: "User not found" });
+        }
+        const id = user._id;
+
+        let userD = await businessDetailsModels.findOne({userId: id});
+
+        return res.status(200).json({
+            success: true,
+            message: "Business details fetched successfully",
+            data: userD,
+        });
+    } catch (err) {
+        return res.status(400).json({ success: false, error: err.message, data: "Fetching Business details failed" });
+    }
+}
+
 export const addressDetails = async (req,res) => {
     const {phone , completeAddress , landmark , pincode , city , state , addressNickname , location  } = req.body;
 
