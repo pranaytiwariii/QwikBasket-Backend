@@ -6,8 +6,60 @@ import Address from "../models/address.models.js"
 import Cart from "../models/cart.models.js"
 import Product from "../models/product.models.js"
 
-// 2. ENDPOINT: Verify Payment & Create *Your* Order
 
+const generateOrderId = async () => {
+  
+    const date = new Date();
+    const yyyy = date.getFullYear();
+    const mm = String(date.getMonth() + 1).padStart(2, '0');
+    const dd = String(date.getDate()).padStart(2, '0');
+    
+    const count = await Order.countDocuments({
+      createdAt: { $gte: new Date(yyyy, mm - 1, dd) }
+    });
+    const sequentialId = String(count + 1).padStart(4, '0');
+  
+    return `ORD-${yyyy}${mm}${dd}-${sequentialId}`;
+  };
+  const mapPaymentMethod = (frontendKey) => {
+    const map = {
+      'credit': 'Credit Card', 
+      'gpay': 'UPI',
+      'paytm': 'UPI',
+      'hdfcUpi': 'UPI',
+      'newUpi': 'UPI',
+      'netbanking': 'Net Banking',
+    };
+    return map[frontendKey] || 'Cash on Delivery'; 
+  };
+  const razorpayInstance = new Razorpay({
+    key_id: process.env.RAZORPAY_KEY_ID,
+    key_secret: process.env.RAZORPAY_KEY_SECRET
+  });
+
+ // 1. ENDPOINT: Create Razorpay Order
+export const createRazorpayOrder=async(req,res)=>{
+    const { amount, currency } = req.body;
+    const options = {
+        amount: amount, 
+        currency: currency,
+        receipt: `receipt_order_${new Date().getTime()}`
+      };
+      try {
+        const order = await razorpayInstance.orders.create(options);
+        if (!order) {
+          return res.status(500).json({ success: false, message: 'Razorpay order creation failed' });
+        }
+        
+        res.json({ success: true, order }); 
+      } catch (error) {
+        console.error('Razorpay Create Order Error:', error);
+        res.status(500).json({ success: false, message: "Could not create Razorpay order" });
+      }
+}
+
+
+ // 2. ENDPOINT: Verify Payment & Create *Your* Order
 export const verifyPaymentAndCreateOrder=async(req,res)=>{
     const {
         razorpay_order_id,
