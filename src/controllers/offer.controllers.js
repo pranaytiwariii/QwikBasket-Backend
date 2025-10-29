@@ -121,7 +121,7 @@ export const getActiveOffers = async (req, res) => {
 // @access  Private/Admin
 export const createOffer = async (req, res) => {
   try {
-    const { title, subtitle, description, date, expiryDate } = req.body;
+    const { date, expiryDate } = req.body;
 
     // Handle image upload
     let imageUrl = "";
@@ -148,14 +148,12 @@ export const createOffer = async (req, res) => {
       });
     }
 
-    const offer = await Offer.create({
-      title,
-      subtitle,
-      description,
+    const offerData = {
       image: imageUrl,
       date: offerDate,
       expiryDate: offerExpiryDate,
-    });
+    };
+    const offer = await Offer.create(offerData);
 
     res.status(201).json({
       success: true,
@@ -214,7 +212,6 @@ export const updateOffer = async (req, res) => {
 
     const updatedOffer = await Offer.findByIdAndUpdate(id, updateData, {
       new: true,
-      runValidators: true,
     });
 
     res.status(200).json({

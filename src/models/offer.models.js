@@ -2,24 +2,6 @@ import mongoose from "mongoose";
 
 const OfferSchema = new mongoose.Schema(
   {
-    title: {
-      type: String,
-      required: [true, "Offer title is required"],
-      trim: true,
-      maxlength: [100, "Title cannot exceed 100 characters"],
-    },
-    subtitle: {
-      type: String,
-      required: [true, "Offer subtitle is required"],
-      trim: true,
-      maxlength: [200, "Subtitle cannot exceed 200 characters"],
-    },
-    description: {
-      type: String,
-      required: [true, "Offer description is required"],
-      trim: true,
-      maxlength: [1000, "Description cannot exceed 1000 characters"],
-    },
     image: {
       type: String,
       required: [true, "Offer image is required"],
