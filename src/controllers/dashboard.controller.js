@@ -20,3 +20,50 @@ export const getDashboardStats=async(req,res)=>{
     res.status(500).json({ error: "Failed to fetch dashboard stats" });
       }
 }
+// API TO GET TOP CATEGORIES
+
+export const getTopCategories=async(req,res)=>{
+    try {
+        const pipeline = [
+            { $unwind: "$items" },
+            {
+              $lookup: {
+                from: "products",
+                localField: "items.productId",
+                foreignField: "_id",
+                as: "product",
+              },
+            },
+            { $unwind: "$product" },
+            {
+              $lookup: {
+                from: "categories",
+                localField: "product.category",
+                foreignField: "_id",
+                as: "category",
+              },
+            },
+            { $unwind: "$category" },
+            {
+              $group: {
+                _id: "$category._id",
+                categoryName: { $first: "$category.name" },
+                totalQuantity: { $sum: "$items.quantity" },
+              },
+            },
+            { $sort: { totalQuantity: -1 } },
+          ];
+          const results=await Order.aggregate(pipeline);
+          if(!results.length) return res.json([]);
+          const total = results.reduce((sum, r) => sum + r.totalQuantity, 0);
+          const formatted = results.map((r) => ({
+            label: r.categoryName,
+            percentage: parseFloat(((r.totalQuantity / total) * 100).toFixed(1)),
+          }));
+      
+          res.json(formatted);
+    } catch (error) {
+        console.error("Top categories error:", err);
+    res.status(500).json({ error: "Failed to fetch top selling categories" });
+    }
+}
