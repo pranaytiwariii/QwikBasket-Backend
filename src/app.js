@@ -9,6 +9,7 @@ import checkoutRoutes from "./routes/checkout.routes.js";
 import addressRoutes from "./routes/address.route.js";
 import orderRoutes from "./routes/order.route.js";
 import paymentRoutes from "./routes/payment.route.js"
+import dashboardRoutes from "./routes/dashboard.routes.js"
 const app = express();
 
 
@@ -24,6 +25,7 @@ app.use("/api/checkout",checkoutRoutes);
 app.use("/api/address",addressRoutes);
 app.use("/api/orders",orderRoutes);
 app.use("/api/payment", paymentRoutes);
+app.use("/api/dashboard",dashboardRoutes);
 
 // Routes
 app.use('/api/health', (req, res) => {
