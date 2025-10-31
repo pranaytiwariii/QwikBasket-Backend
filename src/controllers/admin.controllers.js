@@ -92,7 +92,7 @@ export const changeUserVerificationStatus = async (req, res) => {
 
         const user = await UserModels.findByIdAndUpdate(
             id,
-            { isVerified },
+            { isVerified  , status: "approved" },
             { new: true }
         ).select("-refreshToken");
 

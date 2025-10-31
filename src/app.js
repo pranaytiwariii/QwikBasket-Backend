@@ -9,7 +9,10 @@ import categoryRoutes from "./routes/category.routes.js";
 import subcategoryRoutes from "./routes/subcategory.routes.js";
 import productRoutes from "./routes/products.routes.js";
 import cartRoutes from './routes/cart.routes.js';
-
+import checkoutRoutes from "./routes/checkout.routes.js";
+import addressRoutes from "./routes/address.route.js";
+import orderRoutes from "./routes/order.route.js";
+import paymentRoutes from "./routes/payment.route.js"
 const app = express();
 
 
@@ -27,6 +30,10 @@ app.use('/api/categories', categoryRoutes);
 app.use('/api/subcategories', subcategoryRoutes);
 app.use('/api/products', productRoutes);
 app.use('/api/cart', cartRoutes);
+app.use("/api/checkout",checkoutRoutes);
+app.use("/api/address",addressRoutes);
+app.use("/api/orders",orderRoutes);
+app.use("/api/payment", paymentRoutes);
 
 // Routes
 app.use('/api/health', (req, res) => {
