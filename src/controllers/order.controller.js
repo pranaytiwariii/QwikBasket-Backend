@@ -142,3 +142,59 @@ export const createOrder = async (req, res) => {
     session.endSession();
   }
 };
+
+// Endpoint: GET /api/orders/user/:userId
+export const getUserOrders = async (req, res) => {
+  const { userId } = req.params;
+
+  if (!userId) {
+    return res.status(400).json({ success: false, message: "User ID is required" });
+  }
+
+  try {
+    // Fetch all orders for the user, sorted by creation date (newest first)
+    const orders = await Order.find({ userId })
+      .populate('items.productId', 'name imageUrl') // Optionally populate product details
+      .sort({ createdAt: -1 });
+
+    res.status(200).json({
+      success: true,
+      data: orders,
+    });
+  } catch (error) {
+    console.error("Error in getUserOrders:", error);
+    res.status(500).json({
+      success: false,
+      message: error.message || "Internal server error",
+    });
+  }
+};
+
+// Endpoint: GET /api/orders/:orderId
+export const getOrderById = async (req, res) => {
+  const { orderId } = req.params;
+
+  if (!orderId) {
+    return res.status(400).json({ success: false, message: "Order ID is required" });
+  }
+
+  try {
+    const order = await Order.findById(orderId)
+      .populate('items.productId', 'name imageUrl pricePerKg weightInKg');
+
+    if (!order) {
+      return res.status(404).json({ success: false, message: "Order not found" });
+    }
+
+    res.status(200).json({
+      success: true,
+      data: order,
+    });
+  } catch (error) {
+    console.error("Error in getOrderById:", error);
+    res.status(500).json({
+      success: false,
+      message: error.message || "Internal server error",
+    });
+  }
+};

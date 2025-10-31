@@ -158,3 +158,89 @@ export const verifyPaymentAndCreateOrder=async(req,res)=>{
     }
 
 }
+
+// 3. ENDPOINT: Create a pending order (used for UPI / external payments where
+// the app marks the order as pending until webhook verification arrives)
+export const createPendingOrder = async (req, res) => {
+  const { orderId, userId, addressId, paymentSummary, paymentMethod } = req.body;
+  const session = await mongoose.startSession();
+  session.startTransaction();
+  try {
+    const cart = await Cart.findOne({ user: userId }).populate('items.productId').session(session);
+    const address = await Address.findById(addressId).session(session);
+    if (!cart || cart.items.length === 0) throw new Error('Cart is empty');
+    if (!address) throw new Error('Address not found');
+
+    const stockIssues = [];
+    const orderItems = cart.items.map(item => {
+      const product = item.productId;
+      if (!product) throw new Error('Product not found');
+      if (product.quantityAvailable < item.quantity) {
+        stockIssues.push(`${product.name} only has ${product.quantityAvailable} in stock.`);
+      }
+      const unitPrice = product.weightInKg * product.pricePerKg;
+      return {
+        productId: product._id,
+        quantity: item.quantity,
+        price: unitPrice,
+        name: product.name,
+      };
+    });
+
+    if (stockIssues.length > 0) {
+      throw new Error(`Stock issue: ${stockIssues.join(', ')}`);
+    }
+
+    const shippingAddress = {
+      completeAddress: address.completeAddress,
+      city: address.city,
+      pincode: address.pincode,
+      state: address.state,
+      landmark: address.landmark,
+    };
+
+    const paymentDetails = {
+      paymentMethod: mapPaymentMethod(paymentMethod),
+      paymentId: orderId || undefined,
+      paymentStatus: 'Pending',
+      paymentInfo: orderId || undefined,
+    };
+
+    const newOrder = new Order({
+      orderId: await generateOrderId(),
+      userId: userId,
+      items: orderItems,
+      totalAmount: paymentSummary.totalAmount,
+      shippingAddress: shippingAddress,
+      paymentDetails: paymentDetails,
+      status: 'Pending',
+      orderProgress: [
+        { status: 'Pending', notes: 'Order created and awaiting payment verification' },
+      ],
+    });
+
+    await newOrder.save({ session });
+
+    // Reduce stock to reserve items for this pending order
+    const stockUpdates = cart.items.map(item => ({
+      updateOne: {
+        filter: { _id: item.productId._id },
+        update: { $inc: { quantityAvailable: -item.quantity } },
+      },
+    }));
+
+    await Product.bulkWrite(stockUpdates, { session });
+
+    // Remove the cart for this user
+    await Cart.deleteOne({ user: userId }, { session });
+
+    await session.commitTransaction();
+    res.status(201).json({ success: true, message: 'Pending order created', order: newOrder });
+  } catch (error) {
+    await session.abortTransaction();
+    console.error('Error in createPendingOrder:', error);
+    res.status(500).json({ success: false, message: error.message || 'Internal server error' });
+  } finally {
+    session.endSession();
+  }
+};
