@@ -18,8 +18,8 @@ router.post("/refresh-token", refreshToken);
 
 //protected routes
 router.route('/register').post(verifyToken,businessDetails)
-router.route('/business/:phone').get(verifyToken , getBusinessDetails)
-router.route('/address').post(verifyToken , addressDetails)
-router.route('/verification/:phone').get(verifyToken , UserVerification);
+router.route('/business/:phone').get(verifyToken, getBusinessDetails)
+router.route('/address').post(verifyToken, addressDetails)
+router.route('/verification/:phone').get(verifyToken, UserVerification);
 
 export default router;

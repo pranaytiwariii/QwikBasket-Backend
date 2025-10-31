@@ -93,11 +93,12 @@ export const verifyPaymentAndCreateOrder=async(req,res)=>{
             if (product.quantityAvailable < item.quantity) {
                 stockIssues.push(`${product.name} only has ${product.quantityAvailable} in stock.`);
               }
-            const unitPrice = product.weightInKg * product.pricePerKg;
+            // Use the price already calculated and stored in the cart
+            const itemPrice = item.price || 0;
             return {
                 productId: product._id,
                 quantity: item.quantity,
-                price: unitPrice, 
+                price: itemPrice, 
                 name: product.name,
               };
         });
@@ -178,11 +179,19 @@ export const createPendingOrder = async (req, res) => {
       if (product.quantityAvailable < item.quantity) {
         stockIssues.push(`${product.name} only has ${product.quantityAvailable} in stock.`);
       }
-      const unitPrice = product.weightInKg * product.pricePerKg;
+      // Use the price already calculated and stored in the cart
+      const itemPrice = item.price || 0;
+      
+      // Validate price is a valid number
+      if (isNaN(itemPrice) || itemPrice < 0) {
+        console.error(`Invalid price for product ${product.name}: ${item.price}`);
+        throw new Error(`Invalid price for product ${product.name}`);
+      }
+      
       return {
         productId: product._id,
         quantity: item.quantity,
-        price: unitPrice,
+        price: itemPrice,
         name: product.name,
       };
     });
@@ -222,14 +231,13 @@ export const createPendingOrder = async (req, res) => {
     await newOrder.save({ session });
 
     // Reduce stock to reserve items for this pending order
-    const stockUpdates = cart.items.map(item => ({
-      updateOne: {
-        filter: { _id: item.productId._id },
-        update: { $inc: { quantityAvailable: -item.quantity } },
-      },
-    }));
-
-    await Product.bulkWrite(stockUpdates, { session });
+    for (const item of cart.items) {
+      await Product.updateOne(
+        { _id: item.productId._id },
+        { $inc: { quantityAvailable: -item.quantity } },
+        { session }
+      );
+    }
 
     // Remove the cart for this user
     await Cart.deleteOne({ user: userId }, { session });
