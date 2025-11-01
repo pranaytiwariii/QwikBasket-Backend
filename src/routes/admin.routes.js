@@ -5,7 +5,7 @@ import {
     getAllUsers,
     updateUser,
     deleteUser,
-    changeUserVerificationStatus,
+    changeUserVerificationStatus, getUnverifiedUsers, getUserById, rejectUserVerification, getAllUsersDetails,
 } from "../controllers/admin.controllers.js";
 
 
@@ -13,12 +13,20 @@ const router = Router();
 
 router.use(verifyToken, verifyAdmin);
 
-router.get("/users", getAllUsers);
+router.get("/allusers", getAllUsers);
 
-router.put("/users/:id", updateUser);
+router.get("/alluserdetails" , getAllUsersDetails)
+
+router.get("/pendingusers", getUnverifiedUsers);
+
+router.route("/usersDetails/:id").get(getUserById)
+
+router.patch("/users/:id", updateUser);
 
 router.delete("/users/:id", deleteUser);
 
 router.patch("/users/:id/verify", changeUserVerificationStatus);
+router.patch("/users/:id/reject", rejectUserVerification);
+
 
 export default router;

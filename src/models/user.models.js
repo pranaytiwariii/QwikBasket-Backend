@@ -22,7 +22,7 @@ const userSchema = new Schema({
     },
     status : {
         type: String,
-        enum: [ 'new' , 'exists' ,'pending', "approved"],
+        enum: [ 'new' , 'exists' ,'pending', "approved" , "rejected"],
         default: 'new'
     },
     cart: {
