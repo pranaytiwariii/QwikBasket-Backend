@@ -61,7 +61,7 @@ const OrderSchema=new Schema({
     },
     shippingMethod: {
         type: String,
-        default: "Standard" 
+        default: "Standard Delivery" 
     },
     paymentDetails:{
         paymentMethod:{
@@ -78,7 +78,8 @@ const OrderSchema=new Schema({
         },
         paymentInfo: { 
             type: String 
-        }
+        },
+        cardLast4: { type: String }
     },
     status:{
         type:String,
@@ -90,6 +91,7 @@ const OrderSchema=new Schema({
             "Out for delivery",
             "Delivered",
             "Cancelled",
+            "In Transit"
         ],
         default:"Pending",
     },
