@@ -64,6 +64,6 @@ export const getTopCategories=async(req,res)=>{
           res.json(formatted);
     } catch (error) {
         console.error("Top categories error:", err);
-    res.status(500).json({ error: "Failed to fetch top selling categories" });
+        res.status(500).json({ error: "Failed to fetch top selling categories" });
     }
 }
