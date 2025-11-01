@@ -48,13 +48,88 @@ export const getCart = async (req, res) => {
         cart,
       });
     }
-
-    const cart = await Cart.findOne({ user: req.params.userId }).populate(
+    let messages = [];
+    let cart = await Cart.findOne({ user: req.params.userId }).populate(
       "items.productId"
     );
+
+    if (!cart) {
+      return res.status(404).json({
+        success: false,
+        message: "Cart not found",
+      });
+    }
+    // Validate items strictly against Product collection
+    const validItems = [];
+
+    // Filter out items with null productId and collect valid productIds
+    const validProductIds = [];
+    const itemsWithProductIds = [];
+
+    for (const item of cart.items) {
+      if (!item.productId) {
+        messages.push(`A deleted product was removed from your cart`);
+        continue;
+      }
+
+      const productId = item.productId._id;
+      if (!productId) {
+        messages.push("An invalid product was removed from your cart");
+        continue;
+      }
+
+      validProductIds.push(productId);
+      itemsWithProductIds.push({ item, productId });
+    }
+
+    // Fetch all products at once
+    const products = await Product.find({ _id: { $in: validProductIds } });
+    const productMap = new Map(products.map((p) => [String(p._id), p]));
+
+    // Validate each item
+    for (const { item, productId } of itemsWithProductIds) {
+      const key = String(productId);
+      const product = productMap.get(key);
+
+      if (!product) {
+        const productName = item.productId?.name || `Product ${key}`;
+        messages.push(`${productName} was deleted and removed from your cart`);
+        continue;
+      }
+
+      // Both stockQuantity and item.quantity are in kg (storage unit)
+      if (product.stockQuantity < item.quantity) {
+        item.quantity = toThreeDecimalsNoRound(product.stockQuantity);
+        item.price = roundUpTo2(item.quantity * product.pricePerKg);
+
+        if (product.stockQuantity === 0) {
+          messages.push(`Removed ${product.name} as it is out of stock.`);
+          continue;
+        }
+
+        const displayQuantity = convertQuantityFromStorageUnit(
+          product.stockQuantity,
+          item.selectedUnit || product.defaultUnit
+        );
+        const displayUnit = item.selectedUnit || product.defaultUnit;
+        messages.push(
+          `Adjusted ${product.name} quantity to ${displayQuantity}${displayUnit} due to stock limits`
+        );
+      }
+
+      validItems.push(item);
+    }
+
+    cart.items = validItems;
+    await calculateCartTotals(cart);
+    cart = await Cart.findOne({ user: req.params.userId }).populate(
+      "items.productId"
+    );
+
     res.status(200).json({
       success: true,
       cart,
+      messages,
     });
   } catch (err) {
     console.error("Error in getCart:", err);
@@ -192,21 +267,30 @@ export const addItemToCart = async (req, res) => {
         }
         // Handle positive quantity (adding items)
         if (existingItem.quantity >= product.stockQuantity) {
-          return res.status(400).json({
-            success: false,
+          existingItem.quantity = toThreeDecimalsNoRound(product.stockQuantity);
+          existingItem.selectedUnit = unit;
+          const itemPrice = roundUpTo2(
+            existingItem.quantity * product.pricePerKg
+          );
+          existingItem.price = itemPrice;
+          finalItemQuantity = convertQuantityFromStorageUnit(
+            existingItem.quantity,
+            existingItem.selectedUnit
+          );
+          await calculateCartTotals(cart);
+          const updatedCart = await Cart.findOne({ user: userId }).populate(
+            "items.productId"
+          );
+          return res.status(200).json({
+            success: true,
             message: "You already have the maximum quantity in your cart",
-            cartItemQuantity: convertQuantityFromStorageUnit(
-              existingItem.quantity,
-              existingItem.selectedUnit
-            ),
+            cart: updatedCart,
+            cartItemQuantity: finalItemQuantity,
           });
         }
 
         if (existingItem.quantity + qtyInStorage > product.stockQuantity) {
-          const toAdd = product.stockQuantity - existingItem.quantity;
-          existingItem.quantity = toThreeDecimalsNoRound(
-            existingItem.quantity + toAdd
-          );
+          existingItem.quantity = toThreeDecimalsNoRound(product.stockQuantity);
           existingItem.selectedUnit = unit;
           const itemPrice = roundUpTo2(
             existingItem.quantity * product.pricePerKg
