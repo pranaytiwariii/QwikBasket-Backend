@@ -142,3 +142,170 @@ export const createOrder = async (req, res) => {
     session.endSession();
   }
 };
+// GET all orders (Admin)
+export const getAllOrders=async(req,res)=>{
+  try {
+    const orders=await Order.find().populate('userId','name email phone').sort({createdAt:-1});
+    const formattedOrders = orders.map(order => ({
+      id: order.orderId,
+      date: new Date(order.createdAt).toLocaleDateString('en-US', { 
+        year: 'numeric', 
+        month: 'short', 
+        day: 'numeric' 
+      }),
+      customerName: order.userId?.name || 'N/A',
+      customerEmail: order.userId?.email || 'N/A',
+      customerPhone: order.userId?.phone || 'N/A',
+      items: order.items.length,
+      amount: order.totalAmount,
+      paymentMethod: order.paymentDetails.paymentMethod,
+      status: order.status,
+      invoiceUrl: order.invoiceUrl || null,
+      shippingMethod: order.shippingMethod,
+      cardLast4: order.paymentDetails.cardLast4 || '1234',
+      productName: order.items[0]?.name || 'Multiple Products',
+      unitPrice: order.items[0]?.price || 0,
+    }));
+    res.status(200).json({success:true, data:formattedOrders});
+  } catch (error) {
+    console.error("Error getting in all orders",error);
+    res.status(500).json({
+      success: false,
+      message: "Failed to fetch orders",
+    });
+  }
+}
+// GET single order by ID
+export const getOrderById=async(req,res)=>{
+  try {
+    const {orderId}=req.params;
+    const order=await Order.findOne({orderId}).populate('userId','name email phone');
+    if(!order)
+      {
+        return res.status(404).json({success:false,message:"Order not found"});
+      }
+      const formattedOrder = {
+        id: order.orderId,
+        date: new Date(order.createdAt).toLocaleDateString('en-US', { 
+          year: 'numeric', 
+          month: 'short', 
+          day: 'numeric' 
+        }),
+        customerName: order.userId?.name || 'N/A',
+        customerEmail: order.userId?.email || 'N/A',
+        customerPhone: order.userId?.phone || 'N/A',
+        items: order.items.reduce((sum, item) => sum + item.quantity, 0),
+        amount: order.totalAmount,
+        paymentMethod: order.paymentDetails.paymentMethod,
+        status: order.status,
+        invoiceUrl: order.invoiceUrl || null,
+        shippingMethod: order.shippingMethod,
+        cardLast4: order.paymentDetails.cardLast4 || '1234',
+        productName: order.items.map(item => item.name).join(', '),
+        unitPrice: order.items[0]?.price || 0,
+        shippingAddress: order.shippingAddress,
+        orderProgress: order.orderProgress,
+      };
+      res.status(200).json({success:true,data:formattedOrder});
+  } catch (error) {
+    console.error("Error in getting order by id:",error);
+    res.status(500).json({success:false,message:"Failed to fetch order details"});
+  }
+}
+// UPDATE order status
+export const updateOrderStatus=async(req,res)=>{
+  try {
+    const {orderId}=req.params;
+    const {status,notes}=req.body;
+    if (!['Pending', 'In Transit', 'Delivered', 'Cancelled'].includes(status)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid status value",
+      });
+    }
+    const order=await Order.findOne({orderId});
+    if(!order)
+      {
+        return res.status(404).json({success:false,message:"Order not found"});
+      }
+      order.status = status;
+      order.orderProgress.push({
+        status,
+        notes: notes || `Status updated to ${status}`,
+        timestamp: new Date(),
+      });
+    await order.save();
+    res.status(200).json({
+      success: true,
+      message: "Order status updated successfully",
+      data: { order },
+    });
+  } catch (error) {
+    console.error("Error in order status",error);
+    res.status(500).json({
+      success: false,
+      message: "Failed to update order status",
+    });
+  }
+}
+// DELETE order
+export const deleteOrder=async(req,res)=>{
+  try {
+    const {orderId}=req.params;
+    const order=await Order.findOneAndDelete({orderId});
+    if(!order)
+      {
+        return res.status(404).json({
+          success: false,
+          message: "Order not found",
+        });
+      }
+      res.status(200).json({
+        success: true,
+        message: "Order deleted successfully",
+      });
+  } catch (error) {
+    console.error("Error in deleteOrder:", error);
+    res.status(500).json({
+      success: false,
+      message: "Failed to delete order",
+    });
+  }
+}
+// UPDATE invoice URL
+export const updateOrderInvoice=async(req,res)=>{
+  try {
+    const {orderId}=req.params;
+    const {invoiceUrl}=req.body;
+    if (!invoiceUrl) {
+      return res.status(400).json({
+        success: false,
+        message: "Invoice URL is required",
+      });
+    }
+    const order = await Order.findOneAndUpdate(
+      { orderId },
+      { invoiceUrl },
+      { new: true }
+    );
+
+    if (!order) {
+      return res.status(404).json({
+        success: false,
+        message: "Order not found",
+      });
+    }
+    res.status(200).json({
+      success: true,
+      message: "Invoice updated successfully",
+      data: { order },
+    });
+
+  } catch (error) {
+    console.error("Error in updateOrderInvoice:", error);
+    res.status(500).json({
+      success: false,
+      message: "Failed to update invoice",
+    });
+  }
+}
