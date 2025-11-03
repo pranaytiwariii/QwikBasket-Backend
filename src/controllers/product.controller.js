@@ -338,12 +338,11 @@ export const createProduct = async (req, res) => {
         .json({ message: "At least one product image is required" });
     }
 
-    const product = await Products.create({
+    const productData = {
       name,
       images,
       imageColour,
       category,
-      subcategory,
       stockQuantity,
       packagingQuantity,
       defaultUnit,
@@ -352,9 +351,14 @@ export const createProduct = async (req, res) => {
       hybrid,
       sellerFssai,
       description,
-    });
+    };
 
-    // Populate the created product
+    // Only add subcategory if it's not empty
+    if (subcategory && subcategory.trim() !== "") {
+      productData.subcategory = subcategory;
+    }
+
+    const product = await Products.create(productData);
     await product.populate([
       { path: "category", select: "name image" },
       { path: "subcategory", select: "name" },
@@ -390,7 +394,6 @@ export const updateProduct = async (req, res) => {
       });
     }
 
-    // If category is being updated, check if it exists
     if (updateData.category) {
       const categoryExists = await Category.findById(updateData.category);
       if (!categoryExists) {
@@ -401,8 +404,7 @@ export const updateProduct = async (req, res) => {
       }
     }
 
-    // If subcategory is being updated, check if it exists and belongs to category
-    if (updateData.subcategory) {
+    if (updateData.subcategory && updateData.subcategory.trim() !== "") {
       const subcategoryExists = await SubCategory.findById(
         updateData.subcategory
       );
@@ -422,9 +424,16 @@ export const updateProduct = async (req, res) => {
           message: "Subcategory does not belong to the specified category",
         });
       }
+    } else if (updateData.subcategory === "") {
+      updateData.subcategory = null;
     }
 
-    // Handle image uploads if files are provided
+    if (req.files && req.files.length > 5) {
+      return res.status(400).json({
+        success: false,
+        message: "Maximum 5 images allowed",
+      });
+    }
     if (req.files && req.files.length > 0) {
       let newImages = [];
       for (const file of req.files) {
@@ -437,10 +446,10 @@ export const updateProduct = async (req, res) => {
     }
 
     if (updateData.stockQuantity !== undefined) {
-      updateData.stockQuantity = updateData.stockQuantity;
+      updateData.stockQuantity = Number(updateData.stockQuantity);
     }
     if (updateData.packagingQuantity !== undefined) {
-      updateData.packagingQuantity = updateData.packagingQuantity;
+      updateData.packagingQuantity = Number(updateData.packagingQuantity);
     }
 
     const updatedProduct = await Products.findByIdAndUpdate(id, updateData, {
