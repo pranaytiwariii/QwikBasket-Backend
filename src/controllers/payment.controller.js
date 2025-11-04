@@ -3,6 +3,7 @@ import crypto from "crypto";
 import Razorpay from "razorpay";
 import Order from "../models/order.models.js"
 import Address from "../models/address.models.js"
+import User from "../models/user.models.js"
 import Cart from "../models/cart.models.js"
 import Product from "../models/product.models.js"
 import Payment from "../models/payment.models.js";
@@ -23,6 +24,29 @@ const generateOrderId = async () => {
     const sequentialId = String(count + 1).padStart(4, '0');
   
     return `ORD-${yyyy}${mm}${dd}-${sequentialId}`;
+  };
+  const generatePaymentId = async () => {
+    const date = new Date();
+    const yyyy = date.getFullYear();
+    const mm = String(date.getMonth() + 1).padStart(2, '0');
+    const dd = String(date.getDate()).padStart(2, '0');
+    
+    const datePrefix = `PAY-${yyyy}${mm}${dd}`;
+    
+    const latestPayment = await Payment.findOne({ 
+      transactionId: { $regex: `^${datePrefix}` } 
+    })
+    .sort({ transactionId: -1 })
+    .select('transactionId');
+    
+    let sequentialId = 1;
+    
+    if (latestPayment) {
+      const lastSequence = parseInt(latestPayment.transactionId.split('-').pop());
+      sequentialId = lastSequence + 1;
+    }
+    
+    return `${datePrefix}-${String(sequentialId).padStart(4, '0')}`;
   };
   const mapPaymentMethod = (frontendKey) => {
     const map = {
@@ -177,7 +201,16 @@ export const createPendingOrder = async (req, res) => {
 
     const orderItems = cart.items.map(item => {
       const product = item.productId;
-      const unitPrice = product.weightInKg * product.pricePerKg;
+      let weightInKg = 0;
+
+      if (product.defaultUnit === "gms") {
+        weightInKg = product.packagingQuantity / 1000; 
+      } else if (product.defaultUnit === "kg" || product.defaultUnit === "ltr") {
+        weightInKg = product.packagingQuantity; 
+      } else {
+        throw new Error(`Unsupported unit type: ${product.defaultUnit}`);
+      }
+      const unitPrice = weightInKg * product.pricePerKg;
       return {
         productId: product._id,
         quantity: item.quantity,
