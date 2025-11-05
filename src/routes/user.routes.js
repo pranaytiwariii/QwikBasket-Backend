@@ -1,10 +1,14 @@
 import {Router} from "express";
 import {
     addressDetails,
-    businessDetails, getBusinessDetails,
+    businessDetails, 
+    getBusinessDetails,
     sendOtp,
     UserVerification,
-    verifyOtp
+    verifyOtp,
+    setCustomerType,
+    updateCustomerType,
+    getCustomerType
 } from "../controllers/user.controllers.js";
 import {refreshToken , verifyToken} from "../middlewares/auth.middlewares.js";
 
@@ -17,6 +21,12 @@ router.post("/refresh-token", refreshToken);
 
 
 //protected routes
+// Customer type management
+router.route('/customer-type').post(verifyToken, setCustomerType);
+router.route('/customer-type/:phone').get(verifyToken, getCustomerType);
+router.route('/customer-type/update').put(verifyToken, updateCustomerType);
+
+// Registration and details
 router.route('/register').post(verifyToken,businessDetails)
 router.route('/business/:phone').get(verifyToken, getBusinessDetails)
 router.route('/address').post(verifyToken, addressDetails)

@@ -8,6 +8,15 @@ yarn-error.log*
 lerna-debug.log*
 .pnpm-debug.log*
 
+
+#MD files
+API_TESTING_GUIDE.md
+BACKEND_CHANGES_SUMMARY.md
+CUSTOMER_TYPE_API_GUIDE.md
+FRONTEND_IMPLEMENTATION_EXAMPLES.md
+USER_FLOW_DIAGRAM.md
+
+
 # Diagnostic reports (https://nodejs.org/api/report.html)
 report.[0-9]*.[0-9]*.[0-9]*.[0-9]*.json
 

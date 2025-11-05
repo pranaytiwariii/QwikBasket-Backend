@@ -6,7 +6,6 @@ const userSchema = new Schema({
         required: true,
         unique: true,
         // match: [/^\d{10}$/, "Please enter a valid 10-digit phone number"]
-
     },
     isVerified : {
         type: Boolean,
@@ -14,8 +13,13 @@ const userSchema = new Schema({
     },
     userType: {
         type: String,
-        enum: ["user", "admin"],
+        enum: ["user", "admin" , "normal"],
         default: "user"
+    },
+    customerType: {
+        type: String,
+        enum: ["normal", "business"],
+        default: null // Will be set during customer type selection
     },
     refreshToken : {
         type: String,
@@ -27,9 +31,9 @@ const userSchema = new Schema({
     },
     cart: {
         type: Schema.Types.ObjectId,
-        ref:"Cart"
+        ref: "Cart"
     },
-},{
+}, {
     timestamps: true
 });
 

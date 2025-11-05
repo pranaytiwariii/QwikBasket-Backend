@@ -15,7 +15,6 @@ import orderRoutes from "./routes/order.route.js";
 import paymentRoutes from "./routes/payment.route.js"
 const app = express();
 
-
 // middlewares
 app.use(cors(
     {origin: '*'}

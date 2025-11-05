@@ -56,10 +56,24 @@ export const getAllUsersDetails = async (req, res) => {
 export const getUnverifiedUsers = async (req, res) => {
     try {
         const users = await UserModels.find({ isVerified: false , status : "pending" }).select("-refreshToken");
+
+        const usersWithDetails = await Promise.all(
+            users.map(async (user) => {
+                const businessDetails = await BusinessDetails.findOne({ userId: user._id });
+                const addressDetails = await addressModels.findOne({ userId: user._id });
+
+                return {
+                    ...user.toObject(),
+                    businessDetails,
+                    addressDetails,
+                };
+            })
+        );
+
         return res.status(200).json({
             success: true,
             message: "Unverified users fetched successfully",
-            users,
+            users: usersWithDetails,
         });
     } catch (error) {
         return res.status(500).json({
