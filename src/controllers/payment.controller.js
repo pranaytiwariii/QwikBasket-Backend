@@ -3,8 +3,10 @@ import crypto from "crypto";
 import Razorpay from "razorpay";
 import Order from "../models/order.models.js";
 import Address from "../models/address.models.js";
+import User from "../models/user.models.js"
 import Cart from "../models/cart.models.js";
 import Product from "../models/product.models.js";
+import Payment from "../models/payment.models.js";
 import dotenv from "dotenv";
 dotenv.config();
 
@@ -21,6 +23,29 @@ const generateOrderId = async () => {
 
   return `ORD-${yyyy}${mm}${dd}-${sequentialId}`;
 };
+  const generatePaymentId = async () => {
+    const date = new Date();
+    const yyyy = date.getFullYear();
+    const mm = String(date.getMonth() + 1).padStart(2, '0');
+    const dd = String(date.getDate()).padStart(2, '0');
+    
+    const datePrefix = `PAY-${yyyy}${mm}${dd}`;
+    
+    const latestPayment = await Payment.findOne({ 
+      transactionId: { $regex: `^${datePrefix}` } 
+    })
+    .sort({ transactionId: -1 })
+    .select('transactionId');
+    
+    let sequentialId = 1;
+    
+    if (latestPayment) {
+      const lastSequence = parseInt(latestPayment.transactionId.split('-').pop());
+      sequentialId = lastSequence + 1;
+    }
+    
+    return `${datePrefix}-${String(sequentialId).padStart(4, '0')}`;
+  };
 const mapPaymentMethod = (frontendKey) => {
   const map = {
     credit: "Credit Card",
@@ -161,57 +186,47 @@ export const verifyPaymentAndCreateOrder = async (req, res) => {
       success: false,
       message: error.message || "Internal server error",
     });
-  } finally {
-    session.endSession();
-  }
-};
+    }
+    finally{
+        session.endSession();
+    }
 
-// 3. ENDPOINT: Create a pending order (used for UPI / external payments where
-// the app marks the order as pending until webhook verification arrives)
+}
+// 3. Create Pending Order (for UPI payments awaiting verification)
 export const createPendingOrder = async (req, res) => {
-  const { orderId, userId, addressId, paymentSummary, paymentMethod } =
-    req.body;
+  const { orderId, userId, addressId, paymentSummary, paymentMethod } = req.body;
+
   const session = await mongoose.startSession();
   session.startTransaction();
+
   try {
-    const cart = await Cart.findOne({ user: userId })
-      .populate("items.productId")
-      .session(session);
+    const cart = await Cart.findOne({ user: userId }).populate("items.productId").session(session);
     const address = await Address.findById(addressId).session(session);
+    const user = await User.findById(userId).session(session);
+
     if (!cart || cart.items.length === 0) throw new Error("Cart is empty");
     if (!address) throw new Error("Address not found");
+    if (!user) throw new Error("User not found");
 
-    const stockIssues = [];
-    const orderItems = cart.items.map((item) => {
+    const orderItems = cart.items.map(item => {
       const product = item.productId;
-      if (!product) throw new Error("Product not found");
-      if (product.quantityAvailable < item.quantity) {
-        stockIssues.push(
-          `${product.name} only has ${product.quantityAvailable} in stock.`
-        );
-      }
-      // Use the price already calculated and stored in the cart
-      const itemPrice = item.price || 0;
+      let weightInKg = 0;
 
-      // Validate price is a valid number
-      if (isNaN(itemPrice) || itemPrice < 0) {
-        console.error(
-          `Invalid price for product ${product.name}: ${item.price}`
-        );
-        throw new Error(`Invalid price for product ${product.name}`);
+      if (product.defaultUnit === "gms") {
+        weightInKg = product.packagingQuantity / 1000; 
+      } else if (product.defaultUnit === "kg" || product.defaultUnit === "ltr") {
+        weightInKg = product.packagingQuantity; 
+      } else {
+        throw new Error(`Unsupported unit type: ${product.defaultUnit}`);
       }
-
+      const unitPrice = weightInKg * product.pricePerKg;
       return {
         productId: product._id,
         quantity: item.quantity,
-        price: itemPrice,
+        price: unitPrice,
         name: product.name,
       };
     });
-
-    if (stockIssues.length > 0) {
-      throw new Error(`Stock issue: ${stockIssues.join(", ")}`);
-    }
 
     const shippingAddress = {
       completeAddress: address.completeAddress,
@@ -221,61 +236,391 @@ export const createPendingOrder = async (req, res) => {
       landmark: address.landmark,
     };
 
-    const paymentDetails = {
-      paymentMethod: mapPaymentMethod(paymentMethod),
-      paymentId: orderId || undefined,
-      paymentStatus: "Pending",
-      paymentInfo: orderId || undefined,
-    };
-
     const newOrder = new Order({
       orderId: await generateOrderId(),
       userId: userId,
       items: orderItems,
       totalAmount: paymentSummary.totalAmount,
       shippingAddress: shippingAddress,
-      paymentDetails: paymentDetails,
+      paymentDetails: {
+        paymentMethod: mapPaymentMethod(paymentMethod),
+        paymentStatus: "Pending",
+      },
       status: "Pending",
       orderProgress: [
-        {
-          status: "Pending",
-          notes: "Order created and awaiting payment verification",
-        },
+        { status: "Pending", notes: "Awaiting payment verification" }
       ],
     });
 
     await newOrder.save({ session });
 
-    // Reduce stock to reserve items for this pending order
-    for (const item of cart.items) {
-      await Product.updateOne(
-        { _id: item.productId._id },
-        { $inc: { quantityAvailable: -item.quantity } },
-        { session }
-      );
-    }
+    // Create pending payment
+    const newPayment = new Payment({
+      orderId: newOrder._id,
+      userId: userId,
+      transactionId: await generatePaymentId(),
+      amount: paymentSummary.totalAmount,
+      status: "PENDING",
+      method: mapPaymentMethod(paymentMethod),
+      date: new Date(),
+    });
 
-    // Remove the cart for this user
-    await Cart.deleteOne({ user: userId }, { session });
+    await newPayment.save({ session });
 
     await session.commitTransaction();
-    res
-      .status(201)
-      .json({
-        success: true,
-        message: "Pending order created",
-        order: newOrder,
-      });
+
+    res.status(201).json({
+      success: true,
+      order: newOrder,
+      payment: newPayment,
+    });
   } catch (error) {
     await session.abortTransaction();
     console.error("Error in createPendingOrder:", error);
-    res
-      .status(500)
-      .json({
-        success: false,
-        message: error.message || "Internal server error",
-      });
+    res.status(500).json({
+      success: false,
+      message: error.message || "Internal server error",
+    });
   } finally {
     session.endSession();
+  }
+};
+
+// 4. Get All Payments (For Admin)
+export const getAllPayments = async (req, res) => {
+  try {
+    const payments = await Payment.find()
+      .populate({
+        path: 'userId',
+        select: 'name email phone'
+      })
+      .populate({
+        path: 'orderId',
+        select: 'orderId items'
+      })
+      .sort({ createdAt: -1 });
+
+    const formattedPayments = payments.map(payment => {
+      const user = payment.userId;
+      const order = payment.orderId;
+      
+      // Get product name from first item in order
+      const productName = order?.items?.[0]?.name || 'N/A';
+      const unitPrice = order?.items?.[0]?.price || 0;
+
+      return {
+        id: payment._id.toString(),
+        transactionId: payment.transactionId,
+        orderId: order?.orderId || 'N/A',
+        customerName: user?.name || 'Unknown',
+        email: user?.email || 'N/A',
+        phone: user?.phone || 'N/A',
+        amount: payment.amount,
+        creditAmount: payment.creditAmount || 0,
+        lateFee: payment.lateFee || 0,
+        status: payment.status,
+        method: payment.method,
+        date: payment.date.toLocaleDateString('en-GB'),
+        time: payment.date.toLocaleTimeString('en-US', { 
+          hour: '2-digit', 
+          minute: '2-digit' 
+        }),
+        dueDate: payment.dueDate ? payment.dueDate.toLocaleDateString('en-GB') : 'N/A',
+        productName: productName,
+        unitPrice: unitPrice,
+      };
+    });
+
+    res.json({
+      success: true,
+      payments: formattedPayments,
+    });
+  } catch (error) {
+    console.error("Error in getAllPayments:", error);
+    res.status(500).json({
+      success: false,
+      message: "Could not fetch payments",
+    });
+  }
+};
+
+// 5. Get Payment By ID (For Admin Detail View)
+export const getPaymentById = async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const payment = await Payment.findById(id)
+      .populate({
+        path: 'userId',
+        select: 'name email phone'
+      })
+      .populate({
+        path: 'orderId',
+        select: 'orderId items'
+      });
+
+    if (!payment) {
+      return res.status(404).json({
+        success: false,
+        message: "Payment not found",
+      });
+    }
+
+    const user = payment.userId;
+    const order = payment.orderId;
+    const productName = order?.items?.[0]?.name || 'N/A';
+    const unitPrice = order?.items?.[0]?.price || 0;
+
+    const formattedPayment = {
+      id: payment._id.toString(),
+      transactionId: payment.transactionId,
+      orderId: order?.orderId || 'N/A',
+      customerName: user?.name || 'Unknown',
+      email: user?.email || 'N/A',
+      phone: user?.phone || 'N/A',
+      amount: payment.amount,
+      creditAmount: payment.creditAmount || 0,
+      lateFee: payment.lateFee || 0,
+      status: payment.status,
+      method: payment.method,
+      date: payment.date.toLocaleDateString('en-GB'),
+      time: payment.date.toLocaleTimeString('en-US', { 
+        hour: '2-digit', 
+        minute: '2-digit' 
+      }),
+      dueDate: payment.dueDate ? payment.dueDate.toLocaleDateString('en-GB') : 'N/A',
+      productName: productName,
+      unitPrice: unitPrice,
+    };
+
+    res.json({
+      success: true,
+      payment: formattedPayment,
+    });
+  } catch (error) {
+    console.error("Error in getPaymentById:", error);
+    res.status(500).json({
+      success: false,
+      message: "Could not fetch payment details",
+    });
+  }
+};
+
+// 6. Get Payment Summary (For Admin Dashboard)
+export const getPaymentSummary = async (req, res) => {
+  try {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    const tomorrow = new Date(today);
+    tomorrow.setDate(tomorrow.getDate() + 1);
+
+    // Aggregate payment data
+    const summary = await Payment.aggregate([
+      {
+        $facet: {
+          pendingAmount: [
+            { $match: { status: "UNPAID" } },
+            { $group: { _id: null, total: { $sum: "$amount" } } }
+          ],
+          paidToday: [
+            {
+              $match: {
+                status: "PAID",
+                date: { $gte: today, $lt: tomorrow }
+              }
+            },
+            { $group: { _id: null, total: { $sum: "$amount" } } }
+          ],
+          overdue: [
+            {
+              $match: {
+                status: "UNPAID",
+                dueDate: { $lt: today }
+              }
+            },
+            { $group: { _id: null, total: { $sum: "$amount" } } }
+          ],
+          totalRevenue: [
+            { $match: { status: "PAID" } },
+            { $group: { _id: null, total: { $sum: "$amount" } } }
+          ]
+        }
+      }
+    ]);
+
+    const result = {
+      pendingAmount: summary[0].pendingAmount[0]?.total || 0,
+      paidToday: summary[0].paidToday[0]?.total || 0,
+      overdue: summary[0].overdue[0]?.total || 0,
+      totalRevenue: summary[0].totalRevenue[0]?.total || 0,
+    };
+
+    res.json({
+      success: true,
+      summary: result,
+    });
+  } catch (error) {
+    console.error("Error in getPaymentSummary:", error);
+    res.status(500).json({
+      success: false,
+      message: "Could not fetch payment summary",
+    });
+  }
+};
+
+// 7. Update Payment Status
+export const updatePaymentStatus = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { status } = req.body;
+
+    if (!["PAID", "UNPAID", "PENDING", "FAILED"].includes(status)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid status value",
+      });
+    }
+
+    const payment = await Payment.findByIdAndUpdate(
+      id,
+      { status },
+      { new: true }
+    );
+
+    if (!payment) {
+      return res.status(404).json({
+        success: false,
+        message: "Payment not found",
+      });
+    }
+
+    // Update related order if payment is now PAID
+    if (status === "PAID") {
+      await Order.findByIdAndUpdate(payment.orderId, {
+        "paymentDetails.paymentStatus": "Completed",
+        status: "Confirmed"
+      });
+    }
+
+    res.json({
+      success: true,
+      message: "Payment status updated successfully",
+      payment,
+    });
+  } catch (error) {
+    console.error("Error in updatePaymentStatus:", error);
+    res.status(500).json({
+      success: false,
+      message: "Could not update payment status",
+    });
+  }
+};
+
+// 8. Delete Payment
+export const deletePayment = async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const payment = await Payment.findByIdAndDelete(id);
+
+    if (!payment) {
+      return res.status(404).json({
+        success: false,
+        message: "Payment not found",
+      });
+    }
+
+    res.json({
+      success: true,
+      message: "Payment deleted successfully",
+    });
+  } catch (error) {
+    console.error("Error in deletePayment:", error);
+    res.status(500).json({
+      success: false,
+      message: "Could not delete payment",
+    });
+  }
+};
+
+// 9. Check Credit Status (For Outstanding Payment Modal)
+export const checkCreditStatus = async (req, res) => {
+  try {
+    const { userId } = req.params;
+    const today = new Date();
+
+    const overduePayment = await Payment.findOne({
+      userId: userId,
+      status: "UNPAID",
+      dueDate: { $lt: today }
+    });
+
+    if (overduePayment) {
+      // Calculate late fee (example: 2% of amount per day overdue)
+      const daysOverdue = Math.floor((today - overduePayment.dueDate) / (1000 * 60 * 60 * 24));
+      const lateFee = Math.round(overduePayment.amount * 0.02 * daysOverdue);
+
+      res.json({
+        success: true,
+        isOverdue: true,
+        amount: overduePayment.amount,
+        lateFee: lateFee,
+        paymentId: overduePayment._id,
+      });
+    } else {
+      res.json({
+        success: true,
+        isOverdue: false,
+        amount: 0,
+        lateFee: 0,
+      });
+    }
+  } catch (error) {
+    console.error("Error in checkCreditStatus:", error);
+    res.status(500).json({
+      success: false,
+      message: "Could not check credit status",
+    });
+  }
+};
+
+// 10. Complete Credit Payment (Pay overdue)
+export const completeCreditPayment = async (req, res) => {
+  const { paymentId, razorpay_payment_id, razorpay_order_id } = req.body;
+
+  try {
+    const payment = await Payment.findById(paymentId);
+
+    if (!payment) {
+      return res.status(404).json({
+        success: false,
+        message: "Payment not found",
+      });
+    }
+
+    payment.status = "PAID";
+    payment.transactionId = razorpay_payment_id;
+    payment.razorpayOrderId = razorpay_order_id;
+    await payment.save();
+
+    // Update order status
+    await Order.findByIdAndUpdate(payment.orderId, {
+      "paymentDetails.paymentStatus": "Completed",
+      "paymentDetails.paymentId": razorpay_payment_id,
+      status: "Confirmed"
+    });
+
+    res.json({
+      success: true,
+      message: "Credit payment completed successfully",
+      payment,
+    });
+  } catch (error) {
+    console.error("Error in completeCreditPayment:", error);
+    res.status(500).json({
+      success: false,
+      message: "Could not complete credit payment",
+    });
   }
 };

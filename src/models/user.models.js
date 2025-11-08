@@ -13,13 +13,13 @@ const userSchema = new Schema({
     },
     userType: {
         type: String,
-        enum: ["user", "admin" , "normal"],
+        enum: ["user", "admin" , "Delivery"],
         default: "user"
     },
     customerType: {
         type: String,
         enum: ["normal", "business"],
-        default: null // Will be set during customer type selection
+        default: null
     },
     refreshToken : {
         type: String,

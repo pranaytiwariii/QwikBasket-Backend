@@ -11,14 +11,24 @@ cloudinary.config({
 
 const storage = new multer.memoryStorage();
 
+
 async function imageUploadUtil(file) {
   const result = await cloudinary.uploader.upload(file, {
     resource_type: "auto",
   });
+  return result;
+}
 
+
+async function invoiceUploadUtil(file) {
+  const result = await cloudinary.uploader.upload(file, {
+    resource_type: "auto", 
+    folder: "invoices", 
+    allowed_formats: ["pdf", "jpg", "jpeg", "png"],
+  });
   return result;
 }
 
 const upload = multer({ storage });
 
-export { upload, imageUploadUtil, cloudinary };
+export { upload, imageUploadUtil, invoiceUploadUtil, cloudinary };
