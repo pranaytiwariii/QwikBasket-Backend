@@ -19,7 +19,6 @@ const deliveryAddressSchema = new Schema(
         pincode: {
             type: String,
             required: true,
-            match: [/^\d{6}$/, "Please enter a valid 6-digit pincode"],
         },
         city: {
             type: String,

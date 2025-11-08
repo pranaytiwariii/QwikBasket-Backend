@@ -15,6 +15,8 @@ import orderRoutes from "./routes/order.route.js";
 import paymentRoutes from "./routes/payment.route.js"
 import dashboardRoutes from "./routes/dashboard.routes.js"
 import uploadRoutes from "./routes/upload.route.js"
+import pincodeRoutes from "./routes/pincodes.routes.js";
+import deliveryAgentRoutes from "./routes/deliveryAgent.routes.js";
 const app = express();
 
 // middlewares
@@ -37,6 +39,8 @@ app.use("/api/orders",orderRoutes);
 app.use("/api/payment", paymentRoutes);
 app.use("/api/dashboard",dashboardRoutes);
 app.use("/api/upload", uploadRoutes);
+app.use("/api/pincodes", pincodeRoutes);
+app.use("/api/delivery-agents", deliveryAgentRoutes);
 
 // Routes
 app.use('/api/health', (req, res) => {

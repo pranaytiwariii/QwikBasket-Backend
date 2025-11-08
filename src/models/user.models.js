@@ -29,6 +29,14 @@ const userSchema = new Schema({
         enum: [ 'new' , 'exists' ,'pending', "approved" , "rejected"],
         default: 'new'
     },
+    discount: {
+        type: Number,
+        default: 0
+    },
+    creditDays : {
+        type: Number,
+        default: 0
+    },
     cart: {
         type: Schema.Types.ObjectId,
         ref: "Cart"
