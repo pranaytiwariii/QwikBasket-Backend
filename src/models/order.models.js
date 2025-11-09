@@ -10,7 +10,7 @@ const OrderItemSchema=new Schema({
     quantity:{
         type:Number,
         required:true,
-        min:0.001,
+        min:0.001, // Allow fractional quantities (in kg/ltr)
     },
     price:{
         type:Number,

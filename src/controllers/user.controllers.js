@@ -60,6 +60,7 @@ export const verifyOtp = async (req,res) => {
                 phone: user.phone,
                 isVerified: user.isVerified,
                 userType: user.userType,
+                customerType: user.customerType,
             };
 
             const accessToken = generateAccessToken(payload);
@@ -83,6 +84,7 @@ export const verifyOtp = async (req,res) => {
                 accessToken,
                 refreshToken,
                 status: user.status,
+                customerType: user.customerType,
             });
         }
         return res.status(400).json({
@@ -126,6 +128,112 @@ export const UserVerification = async (req,res) => {
     }
 }
 
+// Set customer type (normal or business)
+export const setCustomerType = async (req, res) => {
+    const { phone, customerType } = req.body;
+    
+    try {
+        if (!phone || !customerType) {
+            return res.status(400).json({ 
+                success: false, 
+                message: "Phone and customerType are required" 
+            });
+        }
+
+        if (!["normal", "business"].includes(customerType)) {
+            return res.status(400).json({ 
+                success: false, 
+                message: "Invalid customer type. Must be 'normal' or 'business'" 
+            });
+        }
+
+        let user = await UserModels.findOne({ phone });
+        if (!user) {
+            return res.status(400).json({ 
+                success: false, 
+                message: "User not found" 
+            });
+        }
+
+        user.customerType = customerType;
+        await user.save();
+
+        return res.status(200).json({
+            success: true,
+            message: `Customer type set to ${customerType} successfully`,
+            data: {
+                phone: user.phone,
+                customerType: user.customerType,
+                status: user.status
+            }
+        });
+    } catch (err) {
+        return res.status(500).json({ 
+            success: false, 
+            error: err.message, 
+            message: "Failed to set customer type" 
+        });
+    }
+};
+
+// Update customer type (change between normal and business)
+export const updateCustomerType = async (req, res) => {
+    const { phone, newCustomerType } = req.body;
+    
+    try {
+        if (!phone || !newCustomerType) {
+            return res.status(400).json({ 
+                success: false, 
+                message: "Phone and newCustomerType are required" 
+            });
+        }
+
+        if (!["normal", "business"].includes(newCustomerType)) {
+            return res.status(400).json({ 
+                success: false, 
+                message: "Invalid customer type. Must be 'normal' or 'business'" 
+            });
+        }
+
+        let user = await UserModels.findOne({ phone });
+        if (!user) {
+            return res.status(400).json({ 
+                success: false, 
+                message: "User not found" 
+            });
+        }
+
+        const oldCustomerType = user.customerType;
+        user.customerType = newCustomerType;
+        
+        // If changing from business to normal, you might want to handle business details
+        if (oldCustomerType === "business" && newCustomerType === "normal") {
+            // Optionally: Keep business details but mark user as normal
+            // Or delete business details if needed
+            user.status = "exists"; // Reset status
+        }
+        
+        await user.save();
+
+        return res.status(200).json({
+            success: true,
+            message: `Customer type updated from ${oldCustomerType} to ${newCustomerType} successfully`,
+            data: {
+                phone: user.phone,
+                customerType: user.customerType,
+                previousCustomerType: oldCustomerType,
+                status: user.status
+            }
+        });
+    } catch (err) {
+        return res.status(500).json({ 
+            success: false, 
+            error: err.message, 
+            message: "Failed to update customer type" 
+        });
+    }
+};
+
 export const businessDetails = async (req,res) => {
     const {phone , name , email , businessName , businessType , gstNumber , fssaiLicense } = req.body;
     try {
@@ -133,22 +241,136 @@ export const businessDetails = async (req,res) => {
         if(!user){
             return res.status(400).json({ success: false, message: "User not found" });
         }
+
+        // Check if user has selected customer type
+        if (!user.customerType) {
+            return res.status(400).json({ 
+                success: false, 
+                message: "Please select customer type first" 
+            });
+        }
+
         const id = user._id;
 
-        let userD = await businessDetailsModels.create({userId: id , name , email , businessName , businessType , gstNumber , fssaiLicense });
+        // For business customers, all business fields are required
+        if (user.customerType === "business") {
+            if (!businessName || !businessType || !gstNumber) {
+                return res.status(400).json({ 
+                    success: false, 
+                    message: "Business name, type, and GST number are required for business customers" 
+                });
+            }
+        }
+
+        // Check if business details already exist
+        let existingDetails = await businessDetailsModels.findOne({ userId: id });
+        let userD;
+
+        if (existingDetails) {
+            // Update existing details
+            existingDetails.name = name;
+            existingDetails.email = email;
+            if (user.customerType === "business") {
+                existingDetails.businessName = businessName;
+                existingDetails.businessType = businessType;
+                existingDetails.gstNumber = gstNumber;
+                existingDetails.fssaiLicense = fssaiLicense;
+            }
+            userD = await existingDetails.save();
+        } else {
+            // Create new business details
+            const detailsData = {
+                userId: id,
+                name,
+                email
+            };
+
+            if (user.customerType === "business") {
+                detailsData.businessName = businessName;
+                detailsData.businessType = businessType;
+                detailsData.gstNumber = gstNumber;
+                detailsData.fssaiLicense = fssaiLicense;
+            }
+
+            userD = await businessDetailsModels.create(detailsData);
+        }
 
         user.status = "exists";
         await user.save();
 
         return res.status(200).json({
             success: true,
-            message: "Business details registered successfully",
+            message: user.customerType === "business" 
+                ? "Business details registered successfully" 
+                : "User details registered successfully",
             data: userD,
+            customerType: user.customerType
         });
     } catch (err) {
-        return res.status(400).json({ success: false, error: err.message, data: "Business details registration failed" });
+        return res.status(400).json({ success: false, error: err.message, data: "Registration failed" });
     }
 }
+
+export const getBusinessDetails = async (req,res) => {
+    const {phone} = req.params;
+    try {
+        let user = await UserModels.findOne({phone});
+        if(!user){
+            return res.status(400).json({ success: false, message: "User not found" });
+        }
+        const id = user._id;
+
+        let userD = await businessDetailsModels.findOne({userId: id});
+
+        return res.status(200).json({
+            success: true,
+            message: "Business details fetched successfully",
+            data: userD,
+            customerType: user.customerType,
+        });
+    } catch (err) {
+        return res.status(400).json({ success: false, error: err.message, data: "Fetching Business details failed" });
+    }
+}
+
+// Get customer type
+export const getCustomerType = async (req, res) => {
+    const { phone } = req.params;
+    
+    try {
+        if (!phone) {
+            return res.status(400).json({ 
+                success: false, 
+                message: "Phone number is required" 
+            });
+        }
+
+        let user = await UserModels.findOne({ phone });
+        if (!user) {
+            return res.status(400).json({ 
+                success: false, 
+                message: "User not found" 
+            });
+        }
+
+        return res.status(200).json({
+            success: true,
+            message: "Customer type fetched successfully",
+            data: {
+                phone: user.phone,
+                customerType: user.customerType,
+                status: user.status,
+                userType: user.userType
+            }
+        });
+    } catch (err) {
+        return res.status(500).json({ 
+            success: false, 
+            error: err.message, 
+            message: "Failed to fetch customer type" 
+        });
+    }
+};
 
 export const addressDetails = async (req,res) => {
     const {phone , completeAddress , landmark , pincode , city , state , addressNickname , location  } = req.body;

@@ -1,8 +1,23 @@
 import express from "express";
-import { createRazorpayOrder,verifyPaymentAndCreateOrder,createPendingOrder,getAllPayments,getPaymentById,getPaymentSummary,updatePaymentStatus,deletePayment,checkCreditStatus,completeCreditPayment } from "../controllers/payment.controller.js";
-const router=express.Router();
-router.post("/create-order",createRazorpayOrder);
-router.post("/verify",verifyPaymentAndCreateOrder);
+import {
+  createRazorpayOrder,
+  verifyPaymentAndCreateOrder,
+  createPendingOrder,
+  getAllPayments,
+  getPaymentById,
+  getPaymentSummary,
+  updatePaymentStatus,
+  deletePayment,
+  checkCreditStatus,
+  completeCreditPayment,
+} from "../controllers/payment.controller.js";
+
+const router = express.Router();
+
+router.post("/create-order", createRazorpayOrder);
+router.post("/verify", verifyPaymentAndCreateOrder);
+router.post("/create-pending-order", createPendingOrder);
+
 router.post("/create-pending-order", createPendingOrder);
 router.get("/payments", getAllPayments);
 router.get("/payment/:id", getPaymentById);
