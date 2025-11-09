@@ -7,7 +7,12 @@ import {
     createProduct,
     updateProduct,
     deleteProduct,
-    searchProducts
+  searchProducts,
+  getProductsAdmin,
+  getProductByIdAdmin,
+  getProductsByCategoryAdmin,
+  getProductsBySubCategoryAdmin,
+  searchProductsAdmin,
 } from '../controllers/product.controller.js';
   import { upload } from '../config/cloudinary.js';
   const router=express.Router();
@@ -18,5 +23,11 @@ import {
   router.get('/:id', getProductById);
   router.post('/', upload.array("images", 10), createProduct);
   router.put('/:id', upload.array("images", 10), updateProduct);
-  router.delete('/:id', deleteProduct);
+router.delete('/:id', deleteProduct);
+  // Admin routes
+  router.get('/admin', getProductsAdmin);
+  router.get('/admin/search', searchProductsAdmin);
+  router.get('/admin/category/:categoryId', getProductsByCategoryAdmin);
+  router.get('/admin/subcategory/:subcategoryId', getProductsBySubCategoryAdmin);
+  router.get('/admin/:id', getProductByIdAdmin);
   export default router;

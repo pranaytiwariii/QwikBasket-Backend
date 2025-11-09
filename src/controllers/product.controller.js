@@ -6,7 +6,7 @@ import { imageUploadUtil } from "../config/cloudinary.js";
 
 // @desc    Get all products with filtering, sorting, and pagination
 // @route   GET /api/products
-// @access  Public
+// @access  Public only for users
 export const getProducts = async (req, res) => {
   try {
     const {
@@ -19,10 +19,16 @@ export const getProducts = async (req, res) => {
       sortOrder = "desc",
       page = 1,
       limit = 10,
+      userType = "business", // default to business
     } = req.query;
 
     // Build query object
     const query = {};
+
+    // Filter by userType: if normal, only show products where showToCustomer is true
+    if (userType === "normal") {
+      query.showToCustomer = true;
+    }
 
     // Filter by category
     if (category) {
@@ -39,11 +45,12 @@ export const getProducts = async (req, res) => {
       query.name = { $regex: search, $options: "i" };
     }
 
-    // Price range filter
+    // Price range filter - use appropriate price field based on userType
+    const priceField = userType === "normal" ? "priceForCustomer" : "price";
     if (minPrice || maxPrice) {
-      query.pricePerKg = {};
-      if (minPrice) query.pricePerKg.$gte = Number(minPrice);
-      if (maxPrice) query.pricePerKg.$lte = Number(maxPrice);
+      query[priceField] = {};
+      if (minPrice) query[priceField].$gte = Number(minPrice);
+      if (maxPrice) query[priceField].$lte = Number(maxPrice);
     }
 
     // Build sort object
@@ -62,12 +69,28 @@ export const getProducts = async (req, res) => {
       .limit(Number(limit))
       .lean();
 
+    // Transform products to show appropriate price based on userType
+    let transformedProducts = products.map((product) => {
+      const { price, priceForCustomer, ...rest } = product;
+      return {
+        ...rest,
+        price: userType === "normal" ? Number(priceForCustomer) : Number(price),
+      };
+    });
+
+    // Additional filter: Remove products with showToCustomer: false when userType is normal
+    if (userType === "normal") {
+      transformedProducts = transformedProducts.filter(
+        (product) => product.showToCustomer === true
+      );
+    }
+
     // Get total count for pagination
     const totalProducts = await Products.countDocuments(query);
 
     res.status(200).json({
       success: true,
-      data: products,
+      data: transformedProducts,
       pagination: {
         currentPage: Number(page),
         totalPages: Math.ceil(totalProducts / Number(limit)),
@@ -91,8 +114,17 @@ export const getProducts = async (req, res) => {
 export const getProductById = async (req, res) => {
   try {
     const { id } = req.params;
+    const { userType = "business" } = req.query;
 
-    const product = await Products.findById(id)
+    // Build query
+    const query = { _id: id };
+
+    // If userType is normal, check if product should be shown to customer
+    if (userType === "normal") {
+      query.showToCustomer = true;
+    }
+
+    const product = await Products.findOne(query)
       .populate("category", "name image")
       .populate("subcategory", "name")
       .lean();
@@ -104,21 +136,49 @@ export const getProductById = async (req, res) => {
       });
     }
 
+    // Transform product to show appropriate price based on userType
+    const { price, priceForCustomer, ...rest } = product;
+    const transformedProduct = {
+      ...rest,
+      price: userType === "normal" ? Number(priceForCustomer) : Number(price),
+    };
+
     // Get similar products from the same subcategory (excluding current product)
-    const similarProducts = await Products.find({
+    // Apply userType filter for similar products too
+    const similarProductsQuery = {
       subcategory: product.subcategory?._id,
       _id: { $ne: id },
-    })
+    };
+
+    if (userType === "normal") {
+      similarProductsQuery.showToCustomer = true;
+    }
+
+    const similarProducts = await Products.find(similarProductsQuery)
       .populate("category", "name image")
       .populate("subcategory", "name")
       .limit(6)
       .lean();
 
+    // Transform similar products
+    const transformedSimilarProducts = similarProducts.map((prod) => {
+      const {
+        price: spPrice,
+        priceForCustomer: spCustomerPrice,
+        ...spRest
+      } = prod;
+      return {
+        ...spRest,
+        price:
+          userType === "normal" ? Number(spCustomerPrice) : Number(spPrice),
+      };
+    });
+
     res.status(200).json({
       success: true,
       data: {
-        ...product,
-        similarProducts,
+        ...transformedProduct,
+        similarProducts: transformedSimilarProducts,
       },
     });
   } catch (error) {
@@ -145,6 +205,7 @@ export const getProductsByCategory = async (req, res) => {
       sortOrder = "desc",
       page = 1,
       limit = 10,
+      userType = "business",
     } = req.query;
 
     // Check if category exists
@@ -159,12 +220,20 @@ export const getProductsByCategory = async (req, res) => {
     // Build query
     const query = { category: categoryId };
 
+    // Filter by userType: if normal, only show products where showToCustomer is true
+    if (userType === "normal") {
+      query.showToCustomer = true;
+    }
+
     if (subcategory) query.subcategory = subcategory;
     if (search) query.name = { $regex: search, $options: "i" };
+
+    // Price range filter - use appropriate price field based on userType
+    const priceField = userType === "normal" ? "priceForCustomer" : "price";
     if (minPrice || maxPrice) {
-      query.pricePerKg = {};
-      if (minPrice) query.pricePerKg.$gte = Number(minPrice);
-      if (maxPrice) query.pricePerKg.$lte = Number(maxPrice);
+      query[priceField] = {};
+      if (minPrice) query[priceField].$gte = Number(minPrice);
+      if (maxPrice) query[priceField].$lte = Number(maxPrice);
     }
 
     const sort = {};
@@ -180,11 +249,20 @@ export const getProductsByCategory = async (req, res) => {
       .limit(Number(limit))
       .lean();
 
+    // Transform products to show appropriate price based on userType
+    const transformedProducts = products.map((product) => {
+      const { price, priceForCustomer, ...rest } = product;
+      return {
+        ...rest,
+        price: userType === "normal" ? Number(priceForCustomer) : Number(price),
+      };
+    });
+
     const totalProducts = await Products.countDocuments(query);
 
     res.status(200).json({
       success: true,
-      data: products,
+      data: transformedProducts,
       category: category,
       pagination: {
         currentPage: Number(page),
@@ -217,6 +295,7 @@ export const getProductsBySubCategory = async (req, res) => {
       sortOrder = "desc",
       page = 1,
       limit = 10,
+      userType = "business",
     } = req.query;
 
     // Check if subcategory exists
@@ -233,11 +312,19 @@ export const getProductsBySubCategory = async (req, res) => {
     // Build query
     const query = { subcategory: subcategoryId };
 
+    // Filter by userType: if normal, only show products where showToCustomer is true
+    if (userType === "normal") {
+      query.showToCustomer = true;
+    }
+
     if (search) query.name = { $regex: search, $options: "i" };
+
+    // Price range filter - use appropriate price field based on userType
+    const priceField = userType === "normal" ? "priceForCustomer" : "price";
     if (minPrice || maxPrice) {
-      query.pricePerKg = {};
-      if (minPrice) query.pricePerKg.$gte = Number(minPrice);
-      if (maxPrice) query.pricePerKg.$lte = Number(maxPrice);
+      query[priceField] = {};
+      if (minPrice) query[priceField].$gte = Number(minPrice);
+      if (maxPrice) query[priceField].$lte = Number(maxPrice);
     }
 
     const sort = {};
@@ -253,11 +340,20 @@ export const getProductsBySubCategory = async (req, res) => {
       .limit(Number(limit))
       .lean();
 
+    // Transform products to show appropriate price based on userType
+    const transformedProducts = products.map((product) => {
+      const { price, priceForCustomer, ...rest } = product;
+      return {
+        ...rest,
+        price: userType === "normal" ? Number(priceForCustomer) : Number(price),
+      };
+    });
+
     const totalProducts = await Products.countDocuments(query);
 
     res.status(200).json({
       success: true,
-      data: products,
+      data: transformedProducts,
       subcategory: subcategory,
       pagination: {
         currentPage: Number(page),
@@ -286,10 +382,13 @@ export const createProduct = async (req, res) => {
       imageColour,
       category,
       subcategory,
-      stockQuantity,
+      stockInPackets,
       packagingQuantity,
-      defaultUnit,
-      pricePerKg,
+      unit,
+      price,
+      mrpPrice,
+      showToCustomer,
+      priceForCustomer,
       origin,
       hybrid,
       sellerFssai,
@@ -343,10 +442,13 @@ export const createProduct = async (req, res) => {
       images,
       imageColour,
       category,
-      stockQuantity,
-      packagingQuantity,
-      defaultUnit,
-      pricePerKg,
+      stockInPackets: Number(stockInPackets),
+      packagingQuantity: Number(packagingQuantity),
+      unit,
+      price: Number(price),
+      mrpPrice: Number(mrpPrice),
+      showToCustomer: showToCustomer === "true" ? true : false,
+      priceForCustomer: Number(priceForCustomer),
       origin,
       hybrid,
       sellerFssai,
@@ -445,11 +547,25 @@ export const updateProduct = async (req, res) => {
       updateData.images = newImages;
     }
 
-    if (updateData.stockQuantity !== undefined) {
-      updateData.stockQuantity = Number(updateData.stockQuantity);
+    if (updateData.stockInPackets !== undefined) {
+      updateData.stockInPackets = Number(updateData.stockInPackets);
     }
     if (updateData.packagingQuantity !== undefined) {
       updateData.packagingQuantity = Number(updateData.packagingQuantity);
+    }
+    if (updateData.price !== undefined) {
+      updateData.price = Number(updateData.price);
+    }
+    if (updateData.mrpPrice !== undefined) {
+      updateData.mrpPrice = Number(updateData.mrpPrice);
+    }
+    if (updateData.showToCustomer !== undefined) {
+      updateData.showToCustomer =
+        updateData.showToCustomer === "true" ||
+        updateData.showToCustomer === true;
+    }
+    if (updateData.priceForCustomer !== undefined) {
+      updateData.priceForCustomer = Number(updateData.priceForCustomer);
     }
 
     const updatedProduct = await Products.findByIdAndUpdate(id, updateData, {
@@ -517,6 +633,7 @@ export const searchProducts = async (req, res) => {
       maxPrice,
       page = 1,
       limit = 10,
+      userType = "business",
     } = req.query;
 
     if (!q) {
@@ -530,16 +647,24 @@ export const searchProducts = async (req, res) => {
     const query = {
       $or: [
         { name: { $regex: q, $options: "i" } },
-        { "info.description": { $regex: q, $options: "i" } },
+        { description: { $regex: q, $options: "i" } },
       ],
     };
 
+    // Filter by userType: if normal, only show products where showToCustomer is true
+    if (userType === "normal") {
+      query.showToCustomer = true;
+    }
+
     if (category) query.category = category;
     if (subcategory) query.subcategory = subcategory;
+
+    // Price range filter - use appropriate price field based on userType
+    const priceField = userType === "normal" ? "priceForCustomer" : "price";
     if (minPrice || maxPrice) {
-      query.pricePerKg = {};
-      if (minPrice) query.pricePerKg.$gte = Number(minPrice);
-      if (maxPrice) query.pricePerKg.$lte = Number(maxPrice);
+      query[priceField] = {};
+      if (minPrice) query[priceField].$gte = Number(minPrice);
+      if (maxPrice) query[priceField].$lte = Number(maxPrice);
     }
 
     const skip = (Number(page) - 1) * Number(limit);
@@ -551,11 +676,456 @@ export const searchProducts = async (req, res) => {
       .limit(Number(limit))
       .lean();
 
+    // Transform products to show appropriate price based on userType
+    const transformedProducts = products.map((product) => {
+      const { price, priceForCustomer, ...rest } = product;
+      return {
+        ...rest,
+        price: userType === "normal" ? Number(priceForCustomer) : Number(price),
+      };
+    });
+
     const totalProducts = await Products.countDocuments(query);
 
     res.status(200).json({
       success: true,
-      data: products,
+      data: transformedProducts,
+      searchQuery: q,
+      pagination: {
+        currentPage: Number(page),
+        totalPages: Math.ceil(totalProducts / Number(limit)),
+        totalProducts,
+        hasNextPage: skip + products.length < totalProducts,
+        hasPrevPage: Number(page) > 1,
+      },
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: "Error searching products",
+      error: error.message,
+    });
+  }
+};
+
+export const getProductsAdmin = async (req, res) => {
+  try {
+    const {
+      category,
+      subcategory,
+      search,
+      minPrice,
+      maxPrice,
+      sortBy = "createdAt",
+      sortOrder = "desc",
+      page = 1,
+      limit = 10,
+    } = req.query;
+
+    // Build query object
+    const query = {};
+
+    // Filter by category
+    if (category) {
+      query.category = category;
+    }
+
+    // Filter by subcategory
+    if (subcategory) {
+      query.subcategory = subcategory;
+    }
+
+    // Search by product name
+    if (search) {
+      query.name = { $regex: search, $options: "i" };
+    }
+
+    // Build sort object
+    const sort = {};
+    sort[sortBy] = sortOrder === "asc" ? 1 : -1;
+
+    // Calculate pagination
+    const skip = (Number(page) - 1) * Number(limit);
+
+    // Execute query - return all fields, no transformation
+    let products = await Products.find(query)
+      .populate("category", "name image")
+      .populate("subcategory", "name")
+      .sort(sort)
+      .skip(skip)
+      .limit(Number(limit))
+      .lean();
+
+    // Apply price filter in memory if needed (check both price fields)
+    if (minPrice || maxPrice) {
+      products = products.filter((product) => {
+        const price = Number(product.price);
+        const priceForCustomer = Number(product.priceForCustomer);
+        const matchesPrice =
+          (!minPrice || price >= Number(minPrice)) &&
+          (!maxPrice || price <= Number(maxPrice));
+        const matchesPriceForCustomer =
+          (!minPrice || priceForCustomer >= Number(minPrice)) &&
+          (!maxPrice || priceForCustomer <= Number(maxPrice));
+        return matchesPrice || matchesPriceForCustomer;
+      });
+    }
+
+    // Ensure all numeric fields are numbers
+    const productsWithNumbers = products.map((product) => ({
+      ...product,
+      price: Number(product.price),
+      mrpPrice: Number(product.mrpPrice),
+      priceForCustomer: Number(product.priceForCustomer),
+      stockInPackets: Number(product.stockInPackets),
+      packagingQuantity: Number(product.packagingQuantity),
+    }));
+
+    // Get total count for pagination (without price filter for accurate count)
+    const totalProducts = await Products.countDocuments(query);
+
+    res.status(200).json({
+      success: true,
+      data: productsWithNumbers,
+      pagination: {
+        currentPage: Number(page),
+        totalPages: Math.ceil(totalProducts / Number(limit)),
+        totalProducts,
+        hasNextPage: skip + products.length < totalProducts,
+        hasPrevPage: Number(page) > 1,
+      },
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: "Error fetching products",
+      error: error.message,
+    });
+  }
+};
+
+// @desc    Get single product by ID for admin (all fields)
+// @route   GET /api/admin/products/:id
+// @access  Private/Admin
+export const getProductByIdAdmin = async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const product = await Products.findById(id)
+      .populate("category", "name image")
+      .populate("subcategory", "name")
+      .lean();
+
+    if (!product) {
+      return res.status(404).json({
+        success: false,
+        message: "Product not found",
+      });
+    }
+
+    // Get similar products from the same subcategory (excluding current product)
+    const similarProducts = await Products.find({
+      subcategory: product.subcategory?._id,
+      _id: { $ne: id },
+    })
+      .populate("category", "name image")
+      .populate("subcategory", "name")
+      .limit(6)
+      .lean();
+
+    // Ensure all numeric fields are numbers
+    const productWithNumbers = {
+      ...product,
+      price: Number(product.price),
+      mrpPrice: Number(product.mrpPrice),
+      priceForCustomer: Number(product.priceForCustomer),
+      stockInPackets: Number(product.stockInPackets),
+      packagingQuantity: Number(product.packagingQuantity),
+    };
+
+    const similarProductsWithNumbers = similarProducts.map((prod) => ({
+      ...prod,
+      price: Number(prod.price),
+      mrpPrice: Number(prod.mrpPrice),
+      priceForCustomer: Number(prod.priceForCustomer),
+      stockInPackets: Number(prod.stockInPackets),
+      packagingQuantity: Number(prod.packagingQuantity),
+    }));
+
+    res.status(200).json({
+      success: true,
+      data: {
+        ...productWithNumbers,
+        similarProducts: similarProductsWithNumbers,
+      },
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: "Error fetching product",
+      error: error.message,
+    });
+  }
+};
+
+// @desc    Get products by category for admin (all fields)
+// @route   GET /api/admin/products/category/:categoryId
+// @access  Private/Admin
+export const getProductsByCategoryAdmin = async (req, res) => {
+  try {
+    const { categoryId } = req.params;
+    const {
+      subcategory,
+      search,
+      minPrice,
+      maxPrice,
+      sortBy = "createdAt",
+      sortOrder = "desc",
+      page = 1,
+      limit = 10,
+    } = req.query;
+
+    // Check if category exists
+    const category = await Category.findById(categoryId);
+    if (!category) {
+      return res.status(404).json({
+        success: false,
+        message: "Category not found",
+      });
+    }
+
+    // Build query
+    const query = { category: categoryId };
+
+    if (subcategory) query.subcategory = subcategory;
+    if (search) query.name = { $regex: search, $options: "i" };
+
+    const sort = {};
+    sort[sortBy] = sortOrder === "asc" ? 1 : -1;
+
+    const skip = (Number(page) - 1) * Number(limit);
+
+    let products = await Products.find(query)
+      .populate("category", "name image")
+      .populate("subcategory", "name")
+      .sort(sort)
+      .skip(skip)
+      .limit(Number(limit))
+      .lean();
+
+    // Apply price filter in memory if needed (check both price fields)
+    if (minPrice || maxPrice) {
+      products = products.filter((product) => {
+        const price = Number(product.price);
+        const priceForCustomer = Number(product.priceForCustomer);
+        const matchesPrice =
+          (!minPrice || price >= Number(minPrice)) &&
+          (!maxPrice || price <= Number(maxPrice));
+        const matchesPriceForCustomer =
+          (!minPrice || priceForCustomer >= Number(minPrice)) &&
+          (!maxPrice || priceForCustomer <= Number(maxPrice));
+        return matchesPrice || matchesPriceForCustomer;
+      });
+    }
+
+    // Ensure all numeric fields are numbers
+    const productsWithNumbers = products.map((product) => ({
+      ...product,
+      price: Number(product.price),
+      mrpPrice: Number(product.mrpPrice),
+      priceForCustomer: Number(product.priceForCustomer),
+      stockInPackets: Number(product.stockInPackets),
+      packagingQuantity: Number(product.packagingQuantity),
+    }));
+
+    const totalProducts = await Products.countDocuments(query);
+
+    res.status(200).json({
+      success: true,
+      data: productsWithNumbers,
+      category: category,
+      pagination: {
+        currentPage: Number(page),
+        totalPages: Math.ceil(totalProducts / Number(limit)),
+        totalProducts,
+        hasNextPage: skip + products.length < totalProducts,
+        hasPrevPage: Number(page) > 1,
+      },
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: "Error fetching products by category",
+      error: error.message,
+    });
+  }
+};
+
+// @desc    Get products by subcategory for admin (all fields)
+// @route   GET /api/admin/products/subcategory/:subcategoryId
+// @access  Private/Admin
+export const getProductsBySubCategoryAdmin = async (req, res) => {
+  try {
+    const { subcategoryId } = req.params;
+    const {
+      search,
+      minPrice,
+      maxPrice,
+      sortBy = "createdAt",
+      sortOrder = "desc",
+      page = 1,
+      limit = 10,
+    } = req.query;
+
+    // Check if subcategory exists
+    const subcategory = await SubCategory.findById(subcategoryId).populate(
+      "parentCategory"
+    );
+    if (!subcategory) {
+      return res.status(404).json({
+        success: false,
+        message: "Subcategory not found",
+      });
+    }
+
+    // Build query
+    const query = { subcategory: subcategoryId };
+
+    if (search) query.name = { $regex: search, $options: "i" };
+
+    const sort = {};
+    sort[sortBy] = sortOrder === "asc" ? 1 : -1;
+
+    const skip = (Number(page) - 1) * Number(limit);
+
+    let products = await Products.find(query)
+      .populate("category", "name image")
+      .populate("subcategory", "name")
+      .sort(sort)
+      .skip(skip)
+      .limit(Number(limit))
+      .lean();
+
+    // Apply price filter in memory if needed (check both price fields)
+    if (minPrice || maxPrice) {
+      products = products.filter((product) => {
+        const price = Number(product.price);
+        const priceForCustomer = Number(product.priceForCustomer);
+        const matchesPrice =
+          (!minPrice || price >= Number(minPrice)) &&
+          (!maxPrice || price <= Number(maxPrice));
+        const matchesPriceForCustomer =
+          (!minPrice || priceForCustomer >= Number(minPrice)) &&
+          (!maxPrice || priceForCustomer <= Number(maxPrice));
+        return matchesPrice || matchesPriceForCustomer;
+      });
+    }
+
+    // Ensure all numeric fields are numbers
+    const productsWithNumbers = products.map((product) => ({
+      ...product,
+      price: Number(product.price),
+      mrpPrice: Number(product.mrpPrice),
+      priceForCustomer: Number(product.priceForCustomer),
+      stockInPackets: Number(product.stockInPackets),
+      packagingQuantity: Number(product.packagingQuantity),
+    }));
+
+    const totalProducts = await Products.countDocuments(query);
+
+    res.status(200).json({
+      success: true,
+      data: productsWithNumbers,
+      subcategory: subcategory,
+      pagination: {
+        currentPage: Number(page),
+        totalPages: Math.ceil(totalProducts / Number(limit)),
+        totalProducts,
+        hasNextPage: skip + products.length < totalProducts,
+        hasPrevPage: Number(page) > 1,
+      },
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: "Error fetching products by subcategory",
+      error: error.message,
+    });
+  }
+};
+
+// @desc    Search products for admin (all fields)
+// @route   GET /api/admin/products/search
+// @access  Private/Admin
+export const searchProductsAdmin = async (req, res) => {
+  try {
+    const {
+      q,
+      category,
+      subcategory,
+      minPrice,
+      maxPrice,
+      page = 1,
+      limit = 10,
+    } = req.query;
+
+    if (!q) {
+      return res.status(400).json({
+        success: false,
+        message: "Search query is required",
+      });
+    }
+
+    // Build search query
+    const query = {
+      $or: [
+        { name: { $regex: q, $options: "i" } },
+        { description: { $regex: q, $options: "i" } },
+      ],
+    };
+
+    if (category) query.category = category;
+    if (subcategory) query.subcategory = subcategory;
+
+    const skip = (Number(page) - 1) * Number(limit);
+
+    let products = await Products.find(query)
+      .populate("category", "name image")
+      .populate("subcategory", "name")
+      .skip(skip)
+      .limit(Number(limit))
+      .lean();
+
+    // Apply price filter in memory if needed (check both price fields)
+    if (minPrice || maxPrice) {
+      products = products.filter((product) => {
+        const price = Number(product.price);
+        const priceForCustomer = Number(product.priceForCustomer);
+        const matchesPrice =
+          (!minPrice || price >= Number(minPrice)) &&
+          (!maxPrice || price <= Number(maxPrice));
+        const matchesPriceForCustomer =
+          (!minPrice || priceForCustomer >= Number(minPrice)) &&
+          (!maxPrice || priceForCustomer <= Number(maxPrice));
+        return matchesPrice || matchesPriceForCustomer;
+      });
+    }
+
+    // Ensure all numeric fields are numbers
+    const productsWithNumbers = products.map((product) => ({
+      ...product,
+      price: Number(product.price),
+      mrpPrice: Number(product.mrpPrice),
+      priceForCustomer: Number(product.priceForCustomer),
+      stockInPackets: Number(product.stockInPackets),
+      packagingQuantity: Number(product.packagingQuantity),
+    }));
+
+    const totalProducts = await Products.countDocuments(query);
+
+    res.status(200).json({
+      success: true,
+      data: productsWithNumbers,
       searchQuery: q,
       pagination: {
         currentPage: Number(page),
