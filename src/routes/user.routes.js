@@ -8,9 +8,10 @@ import {
     verifyOtp,
     setCustomerType,
     updateCustomerType,
-    getCustomerType
+    getCustomerType,
 } from "../controllers/user.controllers.js";
 import {refreshToken , verifyToken} from "../middlewares/auth.middlewares.js";
+import { getCitybyUserID } from "../controllers/address.controller.js";
 
 const router = Router();
 
@@ -20,11 +21,14 @@ router.route('/verify-otp').post(verifyOtp);
 router.post("/refresh-token", refreshToken);
 
 
+
 //protected routes
 // Customer type management
 router.route('/customer-type').post(verifyToken, setCustomerType);
 router.route('/customer-type/:phone').get(verifyToken, getCustomerType);
 router.route('/customer-type/update').put(verifyToken, updateCustomerType);
+router.route("/location/:userId").get(getCitybyUserID);
+
 
 // Registration and details
 router.route('/register').post(verifyToken,businessDetails)

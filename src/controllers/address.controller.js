@@ -1,32 +1,34 @@
-import Address from "../models/address.models.js"
-import mongoose from "mongoose"
+import Address from "../models/address.models.js";
+import mongoose from "mongoose";
+import User from "../models/user.models.js";
 // Endpoint 1: GET /api/addresses/:userId
-export const getAllUserAddresses=async(req,res)=>{
-    try {
-        const {userId}=req.params;
-        if(!userId)
-            {
-                return res.status(400).json({ success: false, message: "User ID is required" });
-            }
-        const addresses=await Address.find({userId:userId}).sort({
-            isDefault:-1,
-            updatedAt:-1,
-        });
-        res.status(200).json({
-            success: true,
-            data: addresses,
-          });
-    } catch (error) {
-        console.error("Error in finding all addresses",error);
-        res.status(500).json({
-            success: false,
-            message: "Internal server error",
-          });
+export const getAllUserAddresses = async (req, res) => {
+  try {
+    const { userId } = req.params;
+    if (!userId) {
+      return res
+        .status(400)
+        .json({ success: false, message: "User ID is required" });
     }
-}
+    const addresses = await Address.find({ userId: userId }).sort({
+      isDefault: -1,
+      updatedAt: -1,
+    });
+    res.status(200).json({
+      success: true,
+      data: addresses,
+    });
+  } catch (error) {
+    console.error("Error in finding all addresses", error);
+    res.status(500).json({
+      success: false,
+      message: "Internal server error",
+    });
+  }
+};
 // Endpoint 2: PUT /api/addresses/set-default
-export const setDefaultAddress=async(req,res)=>{
-    try {
+export const setDefaultAddress = async (req, res) => {
+  try {
     const { userId, addressId } = req.body;
     if (!userId || !addressId) {
       return res.status(400).json({
@@ -37,48 +39,44 @@ export const setDefaultAddress=async(req,res)=>{
     const session = await mongoose.startSession();
     session.startTransaction();
     try {
-        
-        await Address.updateMany(
-          { userId: userId },
-          { $set: { isDefault: false } },
-          { session }
-        );
-  
-        
-        const updatedAddress = await Address.findOneAndUpdate(
-          { _id: addressId, userId: userId },
-          { $set: { isDefault: true } },
-          { new: true, session }
-        );
-  
-        if (!updatedAddress) {
-          throw new Error("Address not found or does not belong to user");
-        }
-  
-        
-        await session.commitTransaction();
-  
-        res.status(200).json({
-          success: true,
-          message: "Default address updated successfully",
-          data: updatedAddress,
-        });
-  
-      } catch (error) {
-        
-        await session.abortTransaction();
-        throw error;
-      } finally {
-        session.endSession();
+      await Address.updateMany(
+        { userId: userId },
+        { $set: { isDefault: false } },
+        { session }
+      );
+
+      const updatedAddress = await Address.findOneAndUpdate(
+        { _id: addressId, userId: userId },
+        { $set: { isDefault: true } },
+        { new: true, session }
+      );
+
+      if (!updatedAddress) {
+        throw new Error("Address not found or does not belong to user");
       }
+
+      await session.commitTransaction();
+
+      res.status(200).json({
+        success: true,
+        message: "Default address updated successfully",
+        data: updatedAddress,
+      });
     } catch (error) {
-        console.error("Error in setDefaultAddress:", error);
-        res.status(500).json({
-        success: false,
-        message: error.message || "Internal server error",
-        });
+      await session.abortTransaction();
+      throw error;
+    } finally {
+      session.endSession();
     }
-}
+  } catch (error) {
+    console.error("Error in setDefaultAddress:", error);
+    res.status(500).json({
+      success: false,
+      message: error.message || "Internal server error",
+    });
+  }
+};
+
 // Endpoint 3: POST /api/address
 export const createAddress = async (req, res) => {
   try {
@@ -93,7 +91,7 @@ export const createAddress = async (req, res) => {
 
     // 1. Check if any other address exists for this user
     const existingAddress = await Address.findOne({ userId: userId });
-    
+
     // 2. If no address exists, this new one is the default
     const isFirstAddress = !existingAddress;
 
@@ -111,17 +109,18 @@ export const createAddress = async (req, res) => {
       message: "Address saved successfully",
       data: newAddress,
     });
-
   } catch (error) {
     console.error("Error in createAddress:", error);
-    if (error.name === 'ValidationError') {
-      const validationErrors = Object.values(error.errors).map(err => err.message);
+    if (error.name === "ValidationError") {
+      const validationErrors = Object.values(error.errors).map(
+        (err) => err.message
+      );
       return res.status(400).json({
         success: false,
         message: validationErrors[0] || "Validation failed",
       });
     }
-    
+
     res.status(500).json({
       success: false,
       message: "Internal server error",
@@ -132,7 +131,15 @@ export const createAddress = async (req, res) => {
 export const updateAddress = async (req, res) => {
   try {
     const { addressId } = req.params;
-    const { userId, completeAddress, landmark, pincode, city, state, addressNickname } = req.body;
+    const {
+      userId,
+      completeAddress,
+      landmark,
+      pincode,
+      city,
+      state,
+      addressNickname,
+    } = req.body;
 
     if (!userId || !addressId) {
       return res.status(400).json({
@@ -168,14 +175,43 @@ export const updateAddress = async (req, res) => {
     });
   } catch (error) {
     console.error("Error in updateAddress:", error);
-    if (error.name === 'ValidationError') {
-      const validationErrors = Object.values(error.errors).map(err => err.message);
+    if (error.name === "ValidationError") {
+      const validationErrors = Object.values(error.errors).map(
+        (err) => err.message
+      );
       return res.status(400).json({
         success: false,
         message: validationErrors[0] || "Validation failed",
       });
     }
-    
+
+    res.status(500).json({
+      success: false,
+      message: "Internal server error",
+    });
+  }
+};
+
+export const getCitybyUserID = async (req, res) => {
+  try {
+    const { userId } = req.params;
+
+    // const user = await User.findById(userId);
+    // if (!user) {
+    //   return res.status(404).json({
+    //     success: false,
+    //     message: "User not found",
+    //   });
+    // }
+
+    const existingAddress = await Address.findOne({ userId: userId });
+
+    res.status(200).json({
+      success: true,
+      data: { city: existingAddress.city, state: existingAddress.state },
+    });
+  } catch (error) {
+    console.error("Error in getCitybyUserID:", error);
     res.status(500).json({
       success: false,
       message: "Internal server error",

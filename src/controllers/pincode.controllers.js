@@ -26,7 +26,7 @@ export const checkPincodeService = async (req, res) => {
 
     if (!pincodeData.service) {
       return res.status(200).json({
-        success: true,
+        success: false,
         available: false,
         message: "Service is currently not available in this location",
         data: {
@@ -56,7 +56,7 @@ export const checkPincodeService = async (req, res) => {
 // Add a new pincode (Admin only)
 export const addPincode = async (req, res) => {
   try {
-    const { pincode, service, city, state } = req.body;
+    const { pincode, service, } = req.body;
 
     // Validate required fields
     if (!pincode) {
