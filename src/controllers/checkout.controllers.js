@@ -13,10 +13,7 @@ const calculateDeliveryFee=(subtotal)=>{
 }
 // Helper function to calculate checkout summary
 const calculateCheckoutSummary=(cart,deliveryFee=null)=>{
-    const subtotal=cart.items.reduce((sum,item)=>{
-        const price=item.productId?.pricePerKg||0;
-        return sum+price*item.quantity;
-    },0);
+  const subtotal = cart.items.reduce((sum, item) => sum + (item.price || 0), 0);
     if(deliveryFee===null)
         {
             deliveryFee=calculateDeliveryFee(subtotal);
@@ -83,9 +80,9 @@ export const getCheckoutSummary=async(req,res)=>{
                 productId: item.productId._id || "unknown",
                 name: item.productId.name,
                 image: item.productId.images?.[0] || null,
-                pricePerKg: item.productId.pricePerKg,
+                pricePerPacket: item.price,
                 quantity: item.quantity,
-                itemTotal: Number((item.productId.pricePerKg * item.quantity).toFixed(2))
+                itemTotal: Number((item.price).toFixed(2))
               })),
               totalItems: summary.totalItems
             },
@@ -169,7 +166,7 @@ export const validateCheckout=async(req,res)=>{
                         });
                         continue;
                     }
-                if(product.quantityAvailable<=0)
+                if(product.stockInPackets<=0)
                     {
                         stockIssues.push({
                             productId:product._id || "unknown",
@@ -177,7 +174,7 @@ export const validateCheckout=async(req,res)=>{
                             issue:"Out of stock"
                         });
                     }
-                else if(item.quantity> product.quantityAvailable)
+                else if(item.quantity> product.stockInPackets)
                     {
                         stockIssues.push({
                             productId:product._id || "unknown",
