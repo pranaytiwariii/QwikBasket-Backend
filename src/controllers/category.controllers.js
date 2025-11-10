@@ -63,7 +63,7 @@ export const getCategoryById = async (req, res) => {
 export const createCategory = async (req, res) => {
   try {
     console.log(req.body);
-    const name = req.body.name;
+    const { name, estimatedDelivery } = req.body;
     const existingCategory = await Category.findOne({ name });
     if (existingCategory) {
       return res.status(400).json({
@@ -85,7 +85,13 @@ export const createCategory = async (req, res) => {
     } else {
       return res.status(400).json({ message: "Category image is required" });
     }
-    const category = await Category.create({ name, image: imageUrl });
+    if (!estimatedDelivery) {
+      return res.status(400).json({
+        success: false,
+        message: "Estimated delivery text is required",
+      });
+    }
+    const category = await Category.create({ name, image: imageUrl,estimatedDelivery });
     res.status(201).json({
       success: true,
       data: category,
@@ -104,7 +110,7 @@ export const createCategory = async (req, res) => {
 export const updateCategory = async (req, res) => {
   try {
     const { id } = req.params;
-    const { name } = req.body;
+    const { name,estimatedDelivery } = req.body;
     const category = await Category.findById(id);
     if (!category) {
       return res.status(404).json({
@@ -121,7 +127,9 @@ export const updateCategory = async (req, res) => {
         });
       }
     }
-    let imageUrl = "";
+    const updateData = {};
+    if (name) updateData.name = name;
+    if (estimatedDelivery) updateData.estimatedDelivery = estimatedDelivery;
 
     // Handle image upload if file is provided
     if (req.file) {
@@ -132,7 +140,7 @@ export const updateCategory = async (req, res) => {
     }
     const updatedCategory = await Category.findByIdAndUpdate(
       id,
-      { name, image: imageUrl },
+      { $set: updateData }, 
       { new: true, runValidators: true }
     );
     res.status(200).json({

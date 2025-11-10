@@ -121,9 +121,9 @@ export const verifyPaymentAndCreateOrder = async (req, res) => {
     const orderItems = cart.items.map((item) => {
       const product = item.productId;
       if (!product) throw new Error(`Product not found`);
-      if (product.quantityAvailable < item.quantity) {
+      if (product.stockInPackets < item.quantity) {
         stockIssues.push(
-          `${product.name} only has ${product.quantityAvailable} in stock.`
+          `${product.name} only has ${product.stockInPackets} in stock.`
         );
       }
       // Use the price already calculated and stored in the cart
@@ -155,7 +155,7 @@ export const verifyPaymentAndCreateOrder = async (req, res) => {
       orderId: await generateOrderId(),
       userId: userId,
       items: orderItems,
-      totalAmount: paymentSummary.totalAmount,
+      totalAmount: cart.totalAmount,
       shippingAddress: shippingAddress,
       paymentDetails: paymentDetails,
       status: "Confirmed",
@@ -168,7 +168,7 @@ export const verifyPaymentAndCreateOrder = async (req, res) => {
     const stockUpdates = cart.items.map((item) => ({
       updateOne: {
         filter: { _id: item.productId._id },
-        update: { $inc: { quantityAvailable: -item.quantity } },
+        update: { $inc: { stockInPackets: -item.quantity } },
       },
     }));
     await Product.bulkWrite(stockUpdates, { session });
@@ -223,7 +223,7 @@ export const createPendingOrder = async (req, res) => {
       return {
         productId: product._id,
         quantity: item.quantity,
-        price: unitPrice,
+        price: item.price,
         name: product.name,
       };
     });

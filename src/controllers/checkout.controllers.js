@@ -1,6 +1,7 @@
 import Cart from "../models/cart.models.js";
 import User from "../models/user.models.js";
 import Address from "../models/address.models.js";
+import Category from "../models/category.models.js"
 import { toTwoDecimalsNoRound, roundUpTo2 } from "../utils/productUtils.js";
 
 // Helper function to calculate the Delivery fees
@@ -13,10 +14,7 @@ const calculateDeliveryFee=(subtotal)=>{
 }
 // Helper function to calculate checkout summary
 const calculateCheckoutSummary=(cart,deliveryFee=null)=>{
-    const subtotal=cart.items.reduce((sum,item)=>{
-        const price=item.productId?.pricePerKg||0;
-        return sum+price*item.quantity;
-    },0);
+  const subtotal = cart.items.reduce((sum, item) => sum + (item.price || 0), 0);
     if(deliveryFee===null)
         {
             deliveryFee=calculateDeliveryFee(subtotal);
@@ -53,7 +51,14 @@ export const getCheckoutSummary=async(req,res)=>{
                     message:"User not found"
                 })
             }
-        const cart=await Cart.findOne({user:userId}).populate("items.productId");
+        const cart=await Cart.findOne({user:userId}).populate({
+          path: "items.productId",
+          populate: {
+            path: "category", 
+            model: "Category",
+          },
+
+    });
         if (!cart) {
             return res.status(400).json({
               success: false,
@@ -79,14 +84,61 @@ export const getCheckoutSummary=async(req,res)=>{
             },
             deliveryAddress: defaultAddress || null,
             cart: {
-                items: cart.items.filter(item => item.productId).map(item => ({
-                productId: item.productId._id || "unknown",
-                name: item.productId.name,
-                image: item.productId.images?.[0] || null,
-                pricePerKg: item.productId.pricePerKg,
-                quantity: item.quantity,
-                itemTotal: Number((item.productId.pricePerKg * item.quantity).toFixed(2))
-              })),
+              items: cart.items.filter(item => item.productId).map(item => {
+                const product = item.productId;
+                const category = product.category; // This is now a populated object
+            
+                // Use the priceForCustomer from your product model
+                const price = product.priceForCustomer || 0; 
+            
+                let deliveryProfile = "STANDARD";
+                let estimatedDeliveryText = "Delivery time not set";
+                let minDateISO = new Date().toISOString();
+                let scheduleRules = null;
+            
+                if (category && category.estimatedDelivery) {
+                  const catDelivery = category.estimatedDelivery; // e.g., "within 2 hours" or "7-10 am"
+            
+                  if (catDelivery === "7-10 am") {
+                    deliveryProfile = "RESTRICTED_WINDOW";
+                    scheduleRules = { timeSlots: ["7 AM - 8 AM", "8 AM - 9 AM", "9 AM - 10 AM"] };
+            
+                    const now = new Date();
+                    const currentHour = now.getHours();
+                    const minDate = new Date();
+            
+                    if (currentHour >= 10) {
+                      // If it's 10 AM or later, next window is tomorrow
+                      minDate.setDate(minDate.getDate() + 1);
+                      estimatedDeliveryText = "Tomorrow, 7 AM - 10 AM";
+                    } else {
+                      estimatedDeliveryText = "Today, 7 AM - 10 AM";
+                    }
+                    minDate.setHours(7, 0, 0, 0); // Set to 7 AM
+                    minDateISO = minDate.toISOString();
+            
+                  } else if (catDelivery === "within 2 hours") {
+                    const minDate = new Date(Date.now() + 2 * 60 * 60 * 1000);
+                    estimatedDeliveryText = `Today, by ${minDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
+                    minDateISO = minDate.toISOString();
+                  } else {
+                    // Handle any other string as standard text
+                    estimatedDeliveryText = catDelivery; 
+                  }
+                }
+            
+                return {
+                  id: product._id, // Frontend uses 'id'
+                  name: product.name,
+                  price: price, // The unit price
+                  deliveryProfile: deliveryProfile,
+                  estimatedDelivery: {
+                    text: estimatedDeliveryText,
+                    minDateISO: minDateISO
+                  },
+                  scheduleRules: scheduleRules
+                };
+              }),
               totalItems: summary.totalItems
             },
             paymentSummary: {
@@ -169,7 +221,7 @@ export const validateCheckout=async(req,res)=>{
                         });
                         continue;
                     }
-                if(product.quantityAvailable<=0)
+                if(product.stockInPackets<=0)
                     {
                         stockIssues.push({
                             productId:product._id || "unknown",
@@ -177,7 +229,7 @@ export const validateCheckout=async(req,res)=>{
                             issue:"Out of stock"
                         });
                     }
-                else if(item.quantity> product.quantityAvailable)
+                else if(item.quantity> product.stockInPackets)
                     {
                         stockIssues.push({
                             productId:product._id || "unknown",

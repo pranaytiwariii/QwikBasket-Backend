@@ -64,9 +64,9 @@ export const createOrder = async (req, res) => {
       const product = item.productId;
       if (!product)
         throw new Error(`Product with ID ${item.productId} not found`);
-      if (product.stockQuantity < item.quantity) {
+      if (product.stockInPackets < item.quantity) {
         stockIssues.push(
-          `${product.name} only has ${product.stockQuantity} in stock.`
+          `${product.name} only has ${product.stockInPackets} in stock.`
         );
       }
       // Match the OrderItemSchema
@@ -116,7 +116,7 @@ export const createOrder = async (req, res) => {
     const stockUpdates = cart.items.map((item) => ({
       updateOne: {
         filter: { _id: item.productId._id },
-        update: { $inc: { stockQuantity: -item.quantity } },
+        update: { $inc: { stockInPackets: -item.quantity } },
       },
     }));
 
