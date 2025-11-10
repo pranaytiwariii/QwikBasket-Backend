@@ -8,13 +8,12 @@ const CartItemSchema = new mongoose.Schema({
     required: true,
   },
   quantity: {
-    //this will be the quantity in kg. All quantities are stored in kg in the database
+    // Quantity in packets (number of packets)
     type: Number,
     required: true,
   },
-  selectedUnit: { type: String, enum: ["gms", "kg", "ltr"], required: true }, // UI-selected unit.
   price: {
-    //this will be the price per kg * quantity in kg (calculated and stored when item is added)
+    // Price per packet * quantity in packets (calculated and stored when item is added)
     type: Number,
     required: true,
   },
