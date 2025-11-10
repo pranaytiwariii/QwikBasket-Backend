@@ -19,14 +19,28 @@ export const getProducts = async (req, res) => {
       sortOrder = "desc",
       page = 1,
       limit = 10,
-      userType = "business", // default to business
+      customerType = "business", // default to business
     } = req.query;
+
+    console.log("=== getProducts ===");
+    console.log("Query params:", {
+      category,
+      subcategory,
+      search,
+      minPrice,
+      maxPrice,
+      sortBy,
+      sortOrder,
+      page,
+      limit,
+      customerType,
+    });
 
     // Build query object
     const query = {};
 
-    // Filter by userType: if normal, only show products where showToCustomer is true
-    if (userType === "normal") {
+    // Filter by customerType: if normal, only show products where showToCustomer is true
+    if (customerType === "normal") {
       query.showToCustomer = true;
     }
 
@@ -45,13 +59,16 @@ export const getProducts = async (req, res) => {
       query.name = { $regex: search, $options: "i" };
     }
 
-    // Price range filter - use appropriate price field based on userType
-    const priceField = userType === "normal" ? "priceForCustomer" : "price";
+    // Price range filter - use appropriate price field based on customerType
+    const priceField = customerType === "normal" ? "priceForCustomer" : "price";
+    console.log("Price field used:", priceField, "customerType:", customerType);
     if (minPrice || maxPrice) {
       query[priceField] = {};
       if (minPrice) query[priceField].$gte = Number(minPrice);
       if (maxPrice) query[priceField].$lte = Number(maxPrice);
     }
+
+    console.log("Built query:", JSON.stringify(query, null, 2));
 
     // Build sort object
     const sort = {};
@@ -69,24 +86,52 @@ export const getProducts = async (req, res) => {
       .limit(Number(limit))
       .lean();
 
-    // Transform products to show appropriate price based on userType
+    console.log("Products fetched from DB:", products.length);
+    if (products.length > 0) {
+      console.log("Sample product (before transformation):", {
+        id: products[0]._id,
+        name: products[0].name,
+        price: products[0].price,
+        priceForCustomer: products[0].priceForCustomer,
+        showToCustomer: products[0].showToCustomer,
+      });
+    }
+
+    // Transform products to show appropriate price based on customerType
     let transformedProducts = products.map((product) => {
       const { price, priceForCustomer, ...rest } = product;
       return {
         ...rest,
-        price: userType === "normal" ? Number(priceForCustomer) : Number(price),
+        price:
+          customerType === "normal" ? Number(priceForCustomer) : Number(price),
       };
     });
 
-    // Additional filter: Remove products with showToCustomer: false when userType is normal
-    if (userType === "normal") {
+    // Additional filter: Remove products with showToCustomer: false when customerType is normal
+    if (customerType === "normal") {
+      const beforeFilter = transformedProducts.length;
       transformedProducts = transformedProducts.filter(
         (product) => product.showToCustomer === true
+      );
+      console.log(
+        `Filtered ${
+          beforeFilter - transformedProducts.length
+        } products with showToCustomer=false`
       );
     }
 
     // Get total count for pagination
     const totalProducts = await Products.countDocuments(query);
+
+    console.log("Query result:", {
+      productsFound: products.length,
+      totalProducts,
+      transformedCount: transformedProducts.length,
+    });
+    console.log(
+      "Sample product:",
+      transformedProducts[0] || "No products found"
+    );
 
     res.status(200).json({
       success: true,
@@ -100,6 +145,7 @@ export const getProducts = async (req, res) => {
       },
     });
   } catch (error) {
+    console.error("Error in getProducts:", error);
     res.status(500).json({
       success: false,
       message: "Error fetching products",
@@ -114,15 +160,20 @@ export const getProducts = async (req, res) => {
 export const getProductById = async (req, res) => {
   try {
     const { id } = req.params;
-    const { userType = "business" } = req.query;
+    const { customerType = "business" } = req.query;
+
+    console.log("=== getProductById ===");
+    console.log("Product ID:", id, "UserType:", customerType);
 
     // Build query
     const query = { _id: id };
 
-    // If userType is normal, check if product should be shown to customer
-    if (userType === "normal") {
+    // If customerType is normal, check if product should be shown to customer
+    if (customerType === "normal") {
       query.showToCustomer = true;
     }
+
+    console.log("Query for product:", JSON.stringify(query, null, 2));
 
     const product = await Products.findOne(query)
       .populate("category", "name image")
@@ -130,27 +181,38 @@ export const getProductById = async (req, res) => {
       .lean();
 
     if (!product) {
+      console.log("Product not found with query:", query);
       return res.status(404).json({
         success: false,
         message: "Product not found",
       });
     }
 
-    // Transform product to show appropriate price based on userType
+    console.log("Product found (before transformation):", {
+      id: product._id,
+      name: product.name,
+      price: product.price,
+      priceForCustomer: product.priceForCustomer,
+      showToCustomer: product.showToCustomer,
+      stockInPackets: product.stockInPackets,
+    });
+
+    // Transform product to show appropriate price based on customerType
     const { price, priceForCustomer, ...rest } = product;
     const transformedProduct = {
       ...rest,
-      price: userType === "normal" ? Number(priceForCustomer) : Number(price),
+      price:
+        customerType === "normal" ? Number(priceForCustomer) : Number(price),
     };
 
     // Get similar products from the same subcategory (excluding current product)
-    // Apply userType filter for similar products too
+    // Apply customerType filter for similar products too
     const similarProductsQuery = {
       subcategory: product.subcategory?._id,
       _id: { $ne: id },
     };
 
-    if (userType === "normal") {
+    if (customerType === "normal") {
       similarProductsQuery.showToCustomer = true;
     }
 
@@ -170,8 +232,16 @@ export const getProductById = async (req, res) => {
       return {
         ...spRest,
         price:
-          userType === "normal" ? Number(spCustomerPrice) : Number(spPrice),
+          customerType === "normal" ? Number(spCustomerPrice) : Number(spPrice),
       };
+    });
+
+    console.log("Product found:", {
+      id: transformedProduct._id,
+      name: transformedProduct.name,
+      price: transformedProduct.price,
+      showToCustomer: transformedProduct.showToCustomer,
+      similarProductsCount: transformedSimilarProducts.length,
     });
 
     res.status(200).json({
@@ -182,6 +252,7 @@ export const getProductById = async (req, res) => {
       },
     });
   } catch (error) {
+    console.error("Error in getProductById:", error);
     res.status(500).json({
       success: false,
       message: "Error fetching product",
@@ -205,8 +276,11 @@ export const getProductsByCategory = async (req, res) => {
       sortOrder = "desc",
       page = 1,
       limit = 10,
-      userType = "business",
+      customerType = "business",
     } = req.query;
+
+    console.log("=== getProductsByCategory ===");
+    console.log("Category ID:", categoryId, "UserType:", customerType);
 
     // Check if category exists
     const category = await Category.findById(categoryId);
@@ -220,16 +294,16 @@ export const getProductsByCategory = async (req, res) => {
     // Build query
     const query = { category: categoryId };
 
-    // Filter by userType: if normal, only show products where showToCustomer is true
-    if (userType === "normal") {
+    // Filter by customerType: if normal, only show products where showToCustomer is true
+    if (customerType === "normal") {
       query.showToCustomer = true;
     }
 
     if (subcategory) query.subcategory = subcategory;
     if (search) query.name = { $regex: search, $options: "i" };
 
-    // Price range filter - use appropriate price field based on userType
-    const priceField = userType === "normal" ? "priceForCustomer" : "price";
+    // Price range filter - use appropriate price field based on customerType
+    const priceField = customerType === "normal" ? "priceForCustomer" : "price";
     if (minPrice || maxPrice) {
       query[priceField] = {};
       if (minPrice) query[priceField].$gte = Number(minPrice);
@@ -249,16 +323,24 @@ export const getProductsByCategory = async (req, res) => {
       .limit(Number(limit))
       .lean();
 
-    // Transform products to show appropriate price based on userType
+    // Transform products to show appropriate price based on customerType
     const transformedProducts = products.map((product) => {
       const { price, priceForCustomer, ...rest } = product;
       return {
         ...rest,
-        price: userType === "normal" ? Number(priceForCustomer) : Number(price),
+        price:
+          customerType === "normal" ? Number(priceForCustomer) : Number(price),
       };
     });
 
     const totalProducts = await Products.countDocuments(query);
+
+    console.log("Products by category result:", {
+      categoryId,
+      productsFound: products.length,
+      totalProducts,
+      transformedCount: transformedProducts.length,
+    });
 
     res.status(200).json({
       success: true,
@@ -273,6 +355,7 @@ export const getProductsByCategory = async (req, res) => {
       },
     });
   } catch (error) {
+    console.error("Error in getProductsByCategory:", error);
     res.status(500).json({
       success: false,
       message: "Error fetching products by category",
@@ -295,8 +378,11 @@ export const getProductsBySubCategory = async (req, res) => {
       sortOrder = "desc",
       page = 1,
       limit = 10,
-      userType = "business",
+      customerType = "business",
     } = req.query;
+
+    console.log("=== getProductsBySubCategory ===");
+    console.log("Subcategory ID:", subcategoryId, "UserType:", customerType);
 
     // Check if subcategory exists
     const subcategory = await SubCategory.findById(subcategoryId).populate(
@@ -312,15 +398,15 @@ export const getProductsBySubCategory = async (req, res) => {
     // Build query
     const query = { subcategory: subcategoryId };
 
-    // Filter by userType: if normal, only show products where showToCustomer is true
-    if (userType === "normal") {
+    // Filter by customerType: if normal, only show products where showToCustomer is true
+    if (customerType === "normal") {
       query.showToCustomer = true;
     }
 
     if (search) query.name = { $regex: search, $options: "i" };
 
-    // Price range filter - use appropriate price field based on userType
-    const priceField = userType === "normal" ? "priceForCustomer" : "price";
+    // Price range filter - use appropriate price field based on customerType
+    const priceField = customerType === "normal" ? "priceForCustomer" : "price";
     if (minPrice || maxPrice) {
       query[priceField] = {};
       if (minPrice) query[priceField].$gte = Number(minPrice);
@@ -340,16 +426,24 @@ export const getProductsBySubCategory = async (req, res) => {
       .limit(Number(limit))
       .lean();
 
-    // Transform products to show appropriate price based on userType
+    // Transform products to show appropriate price based on customerType
     const transformedProducts = products.map((product) => {
       const { price, priceForCustomer, ...rest } = product;
       return {
         ...rest,
-        price: userType === "normal" ? Number(priceForCustomer) : Number(price),
+        price:
+          customerType === "normal" ? Number(priceForCustomer) : Number(price),
       };
     });
 
     const totalProducts = await Products.countDocuments(query);
+
+    console.log("Products by subcategory result:", {
+      subcategoryId,
+      productsFound: products.length,
+      totalProducts,
+      transformedCount: transformedProducts.length,
+    });
 
     res.status(200).json({
       success: true,
@@ -364,6 +458,7 @@ export const getProductsBySubCategory = async (req, res) => {
       },
     });
   } catch (error) {
+    console.error("Error in getProductsBySubCategory:", error);
     res.status(500).json({
       success: false,
       message: "Error fetching products by subcategory",
@@ -394,6 +489,21 @@ export const createProduct = async (req, res) => {
       sellerFssai,
       description,
     } = req.body;
+
+    console.log("=== createProduct ===");
+    console.log("Request body:", {
+      name,
+      category,
+      subcategory,
+      stockInPackets,
+      packagingQuantity,
+      unit,
+      price,
+      mrpPrice,
+      showToCustomer,
+      priceForCustomer,
+      imagesCount: req.files?.length || 0,
+    });
 
     // Check if category exists
     const categoryExists = await Category.findById(category);
@@ -460,11 +570,21 @@ export const createProduct = async (req, res) => {
       productData.subcategory = subcategory;
     }
 
+    console.log("Product data to create:", productData);
+
     const product = await Products.create(productData);
     await product.populate([
       { path: "category", select: "name image" },
       { path: "subcategory", select: "name" },
     ]);
+
+    console.log("Product created successfully:", {
+      id: product._id,
+      name: product.name,
+      price: product.price,
+      priceForCustomer: product.priceForCustomer,
+      stockInPackets: product.stockInPackets,
+    });
 
     res.status(201).json({
       success: true,
@@ -472,6 +592,7 @@ export const createProduct = async (req, res) => {
       message: "Product created successfully",
     });
   } catch (error) {
+    console.error("Error in createProduct:", error);
     res.status(500).json({
       success: false,
       message: "Error creating product",
@@ -487,6 +608,10 @@ export const updateProduct = async (req, res) => {
   try {
     const { id } = req.params;
     const updateData = req.body;
+
+    console.log("=== updateProduct ===");
+    console.log("Product ID:", id);
+    console.log("Update data received:", updateData);
 
     const product = await Products.findById(id);
     if (!product) {
@@ -568,6 +693,8 @@ export const updateProduct = async (req, res) => {
       updateData.priceForCustomer = Number(updateData.priceForCustomer);
     }
 
+    console.log("Processed update data:", updateData);
+
     const updatedProduct = await Products.findByIdAndUpdate(id, updateData, {
       new: true,
       runValidators: true,
@@ -576,12 +703,21 @@ export const updateProduct = async (req, res) => {
       { path: "subcategory", select: "name" },
     ]);
 
+    console.log("Product updated successfully:", {
+      id: updatedProduct._id,
+      name: updatedProduct.name,
+      price: updatedProduct.price,
+      priceForCustomer: updatedProduct.priceForCustomer,
+      stockInPackets: updatedProduct.stockInPackets,
+    });
+
     res.status(200).json({
       success: true,
       data: updatedProduct,
       message: "Product updated successfully",
     });
   } catch (error) {
+    console.error("Error in updateProduct:", error);
     res.status(500).json({
       success: false,
       message: "Error updating product",
@@ -597,21 +733,30 @@ export const deleteProduct = async (req, res) => {
   try {
     const { id } = req.params;
 
+    console.log("=== deleteProduct ===");
+    console.log("Product ID to delete:", id);
+
     const product = await Products.findById(id);
     if (!product) {
+      console.log("Product not found:", id);
       return res.status(404).json({
         success: false,
         message: "Product not found",
       });
     }
 
+    console.log("Deleting product:", { id: product._id, name: product.name });
+
     await Products.findByIdAndDelete(id);
+
+    console.log("Product deleted successfully:", id);
 
     res.status(200).json({
       success: true,
       message: "Product deleted successfully",
     });
   } catch (error) {
+    console.error("Error in deleteProduct:", error);
     res.status(500).json({
       success: false,
       message: "Error deleting product",
@@ -633,8 +778,11 @@ export const searchProducts = async (req, res) => {
       maxPrice,
       page = 1,
       limit = 10,
-      userType = "business",
+      customerType = "business",
     } = req.query;
+
+    console.log("=== searchProducts ===");
+    console.log("Search query:", q, "UserType:", customerType);
 
     if (!q) {
       return res.status(400).json({
@@ -651,16 +799,16 @@ export const searchProducts = async (req, res) => {
       ],
     };
 
-    // Filter by userType: if normal, only show products where showToCustomer is true
-    if (userType === "normal") {
+    // Filter by customerType: if normal, only show products where showToCustomer is true
+    if (customerType === "normal") {
       query.showToCustomer = true;
     }
 
     if (category) query.category = category;
     if (subcategory) query.subcategory = subcategory;
 
-    // Price range filter - use appropriate price field based on userType
-    const priceField = userType === "normal" ? "priceForCustomer" : "price";
+    // Price range filter - use appropriate price field based on customerType
+    const priceField = customerType === "normal" ? "priceForCustomer" : "price";
     if (minPrice || maxPrice) {
       query[priceField] = {};
       if (minPrice) query[priceField].$gte = Number(minPrice);
@@ -676,16 +824,24 @@ export const searchProducts = async (req, res) => {
       .limit(Number(limit))
       .lean();
 
-    // Transform products to show appropriate price based on userType
+    // Transform products to show appropriate price based on customerType
     const transformedProducts = products.map((product) => {
       const { price, priceForCustomer, ...rest } = product;
       return {
         ...rest,
-        price: userType === "normal" ? Number(priceForCustomer) : Number(price),
+        price:
+          customerType === "normal" ? Number(priceForCustomer) : Number(price),
       };
     });
 
     const totalProducts = await Products.countDocuments(query);
+
+    console.log("Search results:", {
+      searchQuery: q,
+      productsFound: products.length,
+      totalProducts,
+      transformedCount: transformedProducts.length,
+    });
 
     res.status(200).json({
       success: true,
@@ -700,6 +856,7 @@ export const searchProducts = async (req, res) => {
       },
     });
   } catch (error) {
+    console.error("Error in searchProducts:", error);
     res.status(500).json({
       success: false,
       message: "Error searching products",
@@ -721,6 +878,19 @@ export const getProductsAdmin = async (req, res) => {
       page = 1,
       limit = 10,
     } = req.query;
+
+    console.log("=== getProductsAdmin ===");
+    console.log("Query params:", {
+      category,
+      subcategory,
+      search,
+      minPrice,
+      maxPrice,
+      sortBy,
+      sortOrder,
+      page,
+      limit,
+    });
 
     // Build query object
     const query = {};
@@ -784,6 +954,12 @@ export const getProductsAdmin = async (req, res) => {
     // Get total count for pagination (without price filter for accurate count)
     const totalProducts = await Products.countDocuments(query);
 
+    console.log("Admin products result:", {
+      productsFound: products.length,
+      totalProducts,
+      afterPriceFilter: productsWithNumbers.length,
+    });
+
     res.status(200).json({
       success: true,
       data: productsWithNumbers,
@@ -796,6 +972,7 @@ export const getProductsAdmin = async (req, res) => {
       },
     });
   } catch (error) {
+    console.error("Error in getProductsAdmin:", error);
     res.status(500).json({
       success: false,
       message: "Error fetching products",
@@ -810,6 +987,9 @@ export const getProductsAdmin = async (req, res) => {
 export const getProductByIdAdmin = async (req, res) => {
   try {
     const { id } = req.params;
+
+    console.log("=== getProductByIdAdmin ===");
+    console.log("Product ID:", id);
 
     const product = await Products.findById(id)
       .populate("category", "name image")
@@ -852,6 +1032,15 @@ export const getProductByIdAdmin = async (req, res) => {
       packagingQuantity: Number(prod.packagingQuantity),
     }));
 
+    console.log("Admin product found:", {
+      id: productWithNumbers._id,
+      name: productWithNumbers.name,
+      price: productWithNumbers.price,
+      priceForCustomer: productWithNumbers.priceForCustomer,
+      stockInPackets: productWithNumbers.stockInPackets,
+      similarProductsCount: similarProductsWithNumbers.length,
+    });
+
     res.status(200).json({
       success: true,
       data: {
@@ -860,6 +1049,7 @@ export const getProductByIdAdmin = async (req, res) => {
       },
     });
   } catch (error) {
+    console.error("Error in getProductByIdAdmin:", error);
     res.status(500).json({
       success: false,
       message: "Error fetching product",
@@ -884,6 +1074,9 @@ export const getProductsByCategoryAdmin = async (req, res) => {
       page = 1,
       limit = 10,
     } = req.query;
+
+    console.log("=== getProductsByCategoryAdmin ===");
+    console.log("Category ID:", categoryId);
 
     // Check if category exists
     const category = await Category.findById(categoryId);
@@ -940,6 +1133,13 @@ export const getProductsByCategoryAdmin = async (req, res) => {
 
     const totalProducts = await Products.countDocuments(query);
 
+    console.log("Admin products by category result:", {
+      categoryId,
+      productsFound: products.length,
+      totalProducts,
+      afterPriceFilter: productsWithNumbers.length,
+    });
+
     res.status(200).json({
       success: true,
       data: productsWithNumbers,
@@ -953,6 +1153,7 @@ export const getProductsByCategoryAdmin = async (req, res) => {
       },
     });
   } catch (error) {
+    console.error("Error in getProductsByCategoryAdmin:", error);
     res.status(500).json({
       success: false,
       message: "Error fetching products by category",
@@ -976,6 +1177,9 @@ export const getProductsBySubCategoryAdmin = async (req, res) => {
       page = 1,
       limit = 10,
     } = req.query;
+
+    console.log("=== getProductsBySubCategoryAdmin ===");
+    console.log("Subcategory ID:", subcategoryId);
 
     // Check if subcategory exists
     const subcategory = await SubCategory.findById(subcategoryId).populate(
@@ -1033,6 +1237,13 @@ export const getProductsBySubCategoryAdmin = async (req, res) => {
 
     const totalProducts = await Products.countDocuments(query);
 
+    console.log("Admin products by subcategory result:", {
+      subcategoryId,
+      productsFound: products.length,
+      totalProducts,
+      afterPriceFilter: productsWithNumbers.length,
+    });
+
     res.status(200).json({
       success: true,
       data: productsWithNumbers,
@@ -1046,6 +1257,7 @@ export const getProductsBySubCategoryAdmin = async (req, res) => {
       },
     });
   } catch (error) {
+    console.error("Error in getProductsBySubCategoryAdmin:", error);
     res.status(500).json({
       success: false,
       message: "Error fetching products by subcategory",
@@ -1068,6 +1280,9 @@ export const searchProductsAdmin = async (req, res) => {
       page = 1,
       limit = 10,
     } = req.query;
+
+    console.log("=== searchProductsAdmin ===");
+    console.log("Search query:", q);
 
     if (!q) {
       return res.status(400).json({
@@ -1123,6 +1338,13 @@ export const searchProductsAdmin = async (req, res) => {
 
     const totalProducts = await Products.countDocuments(query);
 
+    console.log("Admin search results:", {
+      searchQuery: q,
+      productsFound: products.length,
+      totalProducts,
+      afterPriceFilter: productsWithNumbers.length,
+    });
+
     res.status(200).json({
       success: true,
       data: productsWithNumbers,
@@ -1136,6 +1358,7 @@ export const searchProductsAdmin = async (req, res) => {
       },
     });
   } catch (error) {
+    console.error("Error in searchProductsAdmin:", error);
     res.status(500).json({
       success: false,
       message: "Error searching products",

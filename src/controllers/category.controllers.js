@@ -195,7 +195,7 @@ export const deleteCategory = async (req, res) => {
 export const getSubcategoriesByCategory = async (req, res) => {
   try {
     const { categoryId } = req.params;
-    const { userType = "business" } = req.query;
+    const { customerType = "business" } = req.query;
 
     const category = await Category.findById(categoryId);
     if (!category) {
@@ -211,24 +211,25 @@ export const getSubcategoriesByCategory = async (req, res) => {
     // Build query for products
     const productsQuery = { category: categoryId };
 
-    // Filter by userType: if normal, only show products where showToCustomer is true
-    if (userType === "normal") {
+    // Filter by customerType: if normal, only show products where showToCustomer is true
+    if (customerType === "normal") {
       productsQuery.showToCustomer = true;
     }
 
     let products = await Products.find(productsQuery).lean();
 
-    // Transform products to show appropriate price based on userType
+    // Transform products to show appropriate price based on customerType
     let transformedProducts = products.map((product) => {
       const { price, priceForCustomer, ...rest } = product;
       return {
         ...rest,
-        price: userType === "normal" ? Number(priceForCustomer) : Number(price),
+        price:
+          customerType === "normal" ? Number(priceForCustomer) : Number(price),
       };
     });
 
-    // Additional filter: Remove products with showToCustomer: false when userType is normal
-    if (userType === "normal") {
+    // Additional filter: Remove products with showToCustomer: false when customerType is normal
+    if (customerType === "normal") {
       transformedProducts = transformedProducts.filter(
         (product) => product.showToCustomer === true
       );

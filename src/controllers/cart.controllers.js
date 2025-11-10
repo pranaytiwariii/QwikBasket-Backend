@@ -15,12 +15,12 @@ const calculateCartTotals = async (cart) => {
   return cart;
 };
 
-// Helper function to get product price based on user type
-const getProductPrice = (product, userType) => {
-  //we will get the userType from the request query
-  // If userType is "normal" (regular customer), use priceForCustomer
+// Helper function to get product price based on customer type
+const getProductPrice = (product, customerType) => {
+  //we will get the customerType from the request query
+  // If customerType is "normal" (regular customer), use priceForCustomer
   // Otherwise, use price (for business users)
-  return userType === "normal"
+  return customerType === "normal"
     ? Number(product.priceForCustomer)
     : Number(product.price);
 };
@@ -29,7 +29,7 @@ const getProductPrice = (product, userType) => {
 export const getCart = async (req, res) => {
   try {
     const { userId } = req.params;
-    const { userType = "business" } = req.query;
+    const { customerType = "business" } = req.query;
 
     if (!userId) {
       return res.status(400).json({
@@ -102,8 +102,8 @@ export const getCart = async (req, res) => {
         continue;
       }
 
-      // If userType is "normal", filter out products that are not shown to customers
-      if (userType === "normal" && !product.showToCustomer) {
+      // If customerType is "normal", filter out products that are not shown to customers
+      if (customerType === "normal" && !product.showToCustomer) {
         messages.push(
           `${product.name} is not available for customers and was removed from your cart`
         );
@@ -120,14 +120,14 @@ export const getCart = async (req, res) => {
       if (product.stockInPackets < item.quantity) {
         // Adjust quantity to available stock
         item.quantity = Number(product.stockInPackets);
-        const pricePerPacket = getProductPrice(product, userType);
+        const pricePerPacket = getProductPrice(product, customerType);
         item.price = Number((item.quantity * pricePerPacket).toFixed(2));
         messages.push(
           `Adjusted ${product.name} quantity to ${item.quantity} packet(s) due to stock limits`
         );
       } else {
-        // Update price based on current userType and product price
-        const pricePerPacket = getProductPrice(product, userType);
+        // Update price based on current customerType and product price
+        const pricePerPacket = getProductPrice(product, customerType);
         item.price = Number((item.quantity * pricePerPacket).toFixed(2));
       }
 
@@ -156,7 +156,7 @@ export const getCart = async (req, res) => {
 // POST /api/cart/add
 export const addItemToCart = async (req, res) => {
   try {
-    const { productId, quantity, userId, userType = "business" } = req.body;
+    const { productId, quantity, userId, customerType = "business" } = req.body;
 
     // Input validation
     if (!productId) {
@@ -198,7 +198,7 @@ export const addItemToCart = async (req, res) => {
     }
 
     // Check if product is available for this user type
-    if (userType === "normal" && !product.showToCustomer) {
+    if (customerType === "normal" && !product.showToCustomer) {
       return res.status(400).json({
         success: false,
         message: "This product is not available for customers",
@@ -250,7 +250,7 @@ export const addItemToCart = async (req, res) => {
       });
     }
 
-    const pricePerPacket = getProductPrice(product, userType);
+    const pricePerPacket = getProductPrice(product, customerType);
     let finalItemQuantity = quantityInPackets;
     let message = "";
 
@@ -361,7 +361,7 @@ export const addItemToCart = async (req, res) => {
 // PUT /api/cart/update-quantity
 export const updateItemQuantity = async (req, res) => {
   try {
-    const { productId, quantity, userId, userType = "business" } = req.body;
+    const { productId, quantity, userId, customerType = "business" } = req.body;
 
     // Input validation
     if (!productId) {
@@ -402,7 +402,7 @@ export const updateItemQuantity = async (req, res) => {
     }
 
     // Check if product is available for this user type
-    if (userType === "normal" && !product.showToCustomer) {
+    if (customerType === "normal" && !product.showToCustomer) {
       return res.status(400).json({
         success: false,
         message: "This product is not available for customers",
@@ -475,7 +475,7 @@ export const updateItemQuantity = async (req, res) => {
     if (quantityInPackets > product.stockInPackets) {
       // Adjust to maximum available stock
       existingItem.quantity = Number(product.stockInPackets);
-      const pricePerPacket = getProductPrice(product, userType);
+      const pricePerPacket = getProductPrice(product, customerType);
       existingItem.price = Number(
         (product.stockInPackets * pricePerPacket).toFixed(2)
       );
@@ -492,7 +492,7 @@ export const updateItemQuantity = async (req, res) => {
     }
 
     // Update quantity and price
-    const pricePerPacket = getProductPrice(product, userType);
+    const pricePerPacket = getProductPrice(product, customerType);
     existingItem.quantity = quantityInPackets;
     existingItem.price = Number(
       (quantityInPackets * pricePerPacket).toFixed(2)
