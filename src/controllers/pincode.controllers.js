@@ -138,7 +138,15 @@ export const deletePincode = async (req, res) => {
   try {
     const { pincode } = req.params;
 
-    const deletedPincode = await Pincode.findOneAndDelete({ pincode });
+    // Check if it's a MongoDB ObjectId (for deletion by _id)
+    let deletedPincode;
+    if (/^[0-9a-fA-F]{24}$/.test(pincode)) {
+      // It's an ObjectId, delete by _id
+      deletedPincode = await Pincode.findByIdAndDelete(pincode);
+    } else {
+      // It's a pincode string, delete by pincode field
+      deletedPincode = await Pincode.findOneAndDelete({ pincode });
+    }
 
     if (!deletedPincode) {
       return res.status(404).json({

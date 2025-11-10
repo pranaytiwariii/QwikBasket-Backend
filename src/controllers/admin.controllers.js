@@ -96,7 +96,7 @@ export const getUserById = async (req, res) => {
             });
         }
 
-        const user = await UserModels.findById(id).select("-password -refreshToken");
+        const user = await UserModels.findById(id).select("-refreshToken");
 
         if (!user) {
             return res.status(404).json({
