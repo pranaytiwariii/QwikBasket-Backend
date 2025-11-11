@@ -123,19 +123,54 @@ export const createOffer = async (req, res) => {
   try {
     const { date, expiryDate } = req.body;
 
-    // Handle image upload
-    let imageUrl = "";
-    if (req.file) {
-      const b64 = Buffer.from(req.file.buffer).toString("base64");
-      const url = "data:" + req.file.mimetype + ";base64," + b64;
-      const uploadResult = await imageUploadUtil(url);
-      imageUrl = uploadResult.secure_url;
-    } else {
+    if (!req.file) {
       return res.status(400).json({
         success: false,
         message: "Offer image is required",
       });
     }
+
+    // Validate file type (only allow images)
+    const allowedMimeTypes = [
+      "image/jpeg",
+      "image/jpg",
+      "image/png",
+      "image/gif",
+      "image/webp",
+    ];
+
+    if (!allowedMimeTypes.includes(req.file.mimetype)) {
+      return res.status(400).json({
+        success: false,
+        message:
+          "Invalid file type. Only image files (JPEG, PNG, GIF, WebP) are allowed.",
+        receivedType: req.file.mimetype,
+      });
+    }
+
+    // Validate file buffer exists
+    if (!req.file.buffer) {
+      return res.status(400).json({
+        success: false,
+        message: "File buffer is missing",
+      });
+    }
+
+    // Convert to base64 data URL
+    const b64 = Buffer.from(req.file.buffer).toString("base64");
+    const url = "data:" + req.file.mimetype + ";base64," + b64;
+
+    // Upload to Cloudinary
+    const uploadResult = await imageUploadUtil(url);
+
+    if (!uploadResult || !uploadResult.secure_url) {
+      return res.status(500).json({
+        success: false,
+        message: "Upload failed: No secure URL returned from Cloudinary",
+      });
+    }
+
+    const imageUrl = uploadResult.secure_url;
 
     // Validate dates
     const offerDate = date ? new Date(date) : new Date();
@@ -161,10 +196,32 @@ export const createOffer = async (req, res) => {
       message: "Offer created successfully",
     });
   } catch (error) {
-    res.status(500).json({
+    console.error("Error in createOffer:", error);
+    console.error("Error stack:", error.stack);
+
+    // Provide more specific error messages
+    let errorMessage = "Error creating offer";
+    let statusCode = 500;
+
+    if (error.name === "ValidationError") {
+      errorMessage =
+        "Validation error: " +
+        Object.values(error.errors)
+          .map((e) => e.message)
+          .join(", ");
+      statusCode = 400;
+    } else if (error.name === "CastError") {
+      errorMessage = "Invalid data format: " + error.message;
+      statusCode = 400;
+    } else if (error.message) {
+      errorMessage = error.message;
+    }
+
+    res.status(statusCode).json({
       success: false,
-      message: "Error creating offer",
-      error: error.message,
+      message: errorMessage,
+      error: process.env.NODE_ENV === "development" ? error.message : undefined,
+      stack: process.env.NODE_ENV === "development" ? error.stack : undefined,
     });
   }
 };
@@ -187,10 +244,55 @@ export const updateOffer = async (req, res) => {
 
     // Handle image upload if new image is provided
     if (req.file) {
-      const b64 = Buffer.from(req.file.buffer).toString("base64");
-      const url = "data:" + req.file.mimetype + ";base64," + b64;
-      const uploadResult = await imageUploadUtil(url);
-      updateData.image = uploadResult.secure_url;
+      try {
+        // Validate file type (only allow images)
+        const allowedMimeTypes = [
+          "image/jpeg",
+          "image/jpg",
+          "image/png",
+          "image/gif",
+          "image/webp",
+        ];
+
+        if (!allowedMimeTypes.includes(req.file.mimetype)) {
+          return res.status(400).json({
+            success: false,
+            message:
+              "Invalid file type. Only image files (JPEG, PNG, GIF, WebP) are allowed.",
+            receivedType: req.file.mimetype,
+          });
+        }
+
+        // Validate file buffer exists
+        if (!req.file.buffer) {
+          return res.status(400).json({
+            success: false,
+            message: "File buffer is missing",
+          });
+        }
+
+        // Convert to base64 data URL
+        const b64 = Buffer.from(req.file.buffer).toString("base64");
+        const url = "data:" + req.file.mimetype + ";base64," + b64;
+
+        // Upload to Cloudinary
+        const uploadResult = await imageUploadUtil(url);
+
+        if (!uploadResult || !uploadResult.secure_url) {
+          throw new Error(
+            "Upload failed: No secure URL returned from Cloudinary"
+          );
+        }
+
+        updateData.image = uploadResult.secure_url;
+      } catch (uploadError) {
+        console.error("Error uploading offer image:", uploadError);
+        return res.status(500).json({
+          success: false,
+          message: "Failed to upload image",
+          error: uploadError.message,
+        });
+      }
     }
 
     // Validate dates if provided
@@ -212,7 +314,15 @@ export const updateOffer = async (req, res) => {
 
     const updatedOffer = await Offer.findByIdAndUpdate(id, updateData, {
       new: true,
+      runValidators: true,
     });
+
+    if (!updatedOffer) {
+      return res.status(404).json({
+        success: false,
+        message: "Offer not found after update",
+      });
+    }
 
     res.status(200).json({
       success: true,
@@ -220,10 +330,32 @@ export const updateOffer = async (req, res) => {
       message: "Offer updated successfully",
     });
   } catch (error) {
-    res.status(500).json({
+    console.error("Error in updateOffer:", error);
+    console.error("Error stack:", error.stack);
+
+    // Provide more specific error messages
+    let errorMessage = "Error updating offer";
+    let statusCode = 500;
+
+    if (error.name === "ValidationError") {
+      errorMessage =
+        "Validation error: " +
+        Object.values(error.errors)
+          .map((e) => e.message)
+          .join(", ");
+      statusCode = 400;
+    } else if (error.name === "CastError") {
+      errorMessage = "Invalid data format: " + error.message;
+      statusCode = 400;
+    } else if (error.message) {
+      errorMessage = error.message;
+    }
+
+    res.status(statusCode).json({
       success: false,
-      message: "Error updating offer",
-      error: error.message,
+      message: errorMessage,
+      error: process.env.NODE_ENV === "development" ? error.message : undefined,
+      stack: process.env.NODE_ENV === "development" ? error.stack : undefined,
     });
   }
 };
