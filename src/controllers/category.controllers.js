@@ -62,7 +62,6 @@ export const getCategoryById = async (req, res) => {
 // @access  Private/Admin
 export const createCategory = async (req, res) => {
   try {
-    console.log(req.body);
     const { name, estimatedDelivery } = req.body;
     const existingCategory = await Category.findOne({ name });
     if (existingCategory) {
@@ -71,27 +70,65 @@ export const createCategory = async (req, res) => {
         message: "Category already exists",
       });
     }
-    console.log(req.file);
-    let imageUrl = "";
-    if (req.file) {
-      const b64 = Buffer.from(req.file.buffer).toString("base64");
-      console.log(b64);
-      const url = "data:" + req.file.mimetype + ";base64," + b64;
-      console.log(url);
-      const uploadResult = await imageUploadUtil(url);
-      console.log(uploadResult);
-      imageUrl = uploadResult.secure_url;
-      console.log(imageUrl);
-    } else {
-      return res.status(400).json({ message: "Category image is required" });
+    if (!req.file) {
+      return res.status(400).json({
+        success: false,
+        message: "Category image is required",
+      });
     }
+
+    // Validate file type (only allow images)
+    const allowedMimeTypes = [
+      "image/jpeg",
+      "image/jpg",
+      "image/png",
+      "image/gif",
+      "image/webp",
+    ];
+
+    if (!allowedMimeTypes.includes(req.file.mimetype)) {
+      return res.status(400).json({
+        success: false,
+        message:
+          "Invalid file type. Only image files (JPEG, PNG, GIF, WebP) are allowed.",
+        receivedType: req.file.mimetype,
+      });
+    }
+
+    // Validate file buffer exists
+    if (!req.file.buffer) {
+      return res.status(400).json({
+        success: false,
+        message: "File buffer is missing",
+      });
+    }
+
+    // Convert to base64 data URL
+    const b64 = Buffer.from(req.file.buffer).toString("base64");
+    const url = "data:" + req.file.mimetype + ";base64," + b64;
+
+    // Upload to Cloudinary
+    const uploadResult = await imageUploadUtil(url);
+
+    if (!uploadResult || !uploadResult.secure_url) {
+      return res.status(500).json({
+        success: false,
+        message: "Upload failed: No secure URL returned from Cloudinary",
+      });
+    }
+
+    const imageUrl = uploadResult.secure_url;
     if (!estimatedDelivery) {
       return res.status(400).json({
         success: false,
         message: "Estimated delivery text is required",
       });
     }
-    const category = await Category.create({ name, image: imageUrl,estimatedDelivery });
+    const category = await Category.create({
+      name,
+      image: imageUrl,
+      estimatedDelivery,
+    });
     res.status(201).json({
       success: true,
       data: category,
@@ -110,7 +147,8 @@ export const createCategory = async (req, res) => {
 export const updateCategory = async (req, res) => {
   try {
     const { id } = req.params;
-    const { name,estimatedDelivery } = req.body;
+    const { name, estimatedDelivery } = req.body;
+
     const category = await Category.findById(id);
     if (!category) {
       return res.status(404).json({
@@ -118,6 +156,7 @@ export const updateCategory = async (req, res) => {
         message: "Category not found",
       });
     }
+
     if (name && name !== category.name) {
       const existingCategory = await Category.findOne({ name });
       if (existingCategory) {
@@ -127,32 +166,109 @@ export const updateCategory = async (req, res) => {
         });
       }
     }
+
     const updateData = {};
     if (name) updateData.name = name;
     if (estimatedDelivery) updateData.estimatedDelivery = estimatedDelivery;
 
     // Handle image upload if file is provided
     if (req.file) {
-      const b64 = Buffer.from(req.file.buffer).toString("base64");
-      const url = "data:" + req.file.mimetype + ";base64," + b64;
-      const uploadResult = await imageUploadUtil(url);
-      imageUrl = uploadResult.secure_url;
+      try {
+        // Validate file type (only allow images)
+        const allowedMimeTypes = [
+          "image/jpeg",
+          "image/jpg",
+          "image/png",
+          "image/gif",
+          "image/webp",
+        ];
+
+        if (!allowedMimeTypes.includes(req.file.mimetype)) {
+          return res.status(400).json({
+            success: false,
+            message:
+              "Invalid file type. Only image files (JPEG, PNG, GIF, WebP) are allowed.",
+            receivedType: req.file.mimetype,
+          });
+        }
+
+        // Validate file buffer exists
+        if (!req.file.buffer) {
+          return res.status(400).json({
+            success: false,
+            message: "File buffer is missing",
+          });
+        }
+
+        // Convert to base64 data URL
+        const b64 = Buffer.from(req.file.buffer).toString("base64");
+        const url = "data:" + req.file.mimetype + ";base64," + b64;
+
+        // Upload to Cloudinary
+        const uploadResult = await imageUploadUtil(url);
+
+        if (!uploadResult || !uploadResult.secure_url) {
+          throw new Error(
+            "Upload failed: No secure URL returned from Cloudinary"
+          );
+        }
+
+        updateData.image = uploadResult.secure_url;
+      } catch (uploadError) {
+        console.error("Error uploading category image:", uploadError);
+        return res.status(500).json({
+          success: false,
+          message: "Failed to upload image",
+          error: uploadError.message,
+        });
+      }
     }
+
     const updatedCategory = await Category.findByIdAndUpdate(
       id,
-      { $set: updateData }, 
+      { $set: updateData },
       { new: true, runValidators: true }
     );
+
+    if (!updatedCategory) {
+      return res.status(404).json({
+        success: false,
+        message: "Category not found after update",
+      });
+    }
+
     res.status(200).json({
       success: true,
       data: updatedCategory,
       message: "Category updated successfully",
     });
   } catch (error) {
-    res.status(500).json({
+    console.error("Error in updateCategory:", error);
+    console.error("Error stack:", error.stack);
+
+    // Provide more specific error messages
+    let errorMessage = "Error updating category";
+    let statusCode = 500;
+
+    if (error.name === "ValidationError") {
+      errorMessage =
+        "Validation error: " +
+        Object.values(error.errors)
+          .map((e) => e.message)
+          .join(", ");
+      statusCode = 400;
+    } else if (error.name === "CastError") {
+      errorMessage = "Invalid data format: " + error.message;
+      statusCode = 400;
+    } else if (error.message) {
+      errorMessage = error.message;
+    }
+
+    res.status(statusCode).json({
       success: false,
-      message: "Error updating category",
-      error: error.message,
+      message: errorMessage,
+      error: process.env.NODE_ENV === "development" ? error.message : undefined,
+      stack: process.env.NODE_ENV === "development" ? error.stack : undefined,
     });
   }
 };
@@ -237,6 +353,7 @@ export const getSubcategoriesByCategory = async (req, res) => {
     });
 
     // Additional filter: Remove products with showToCustomer: false when customerType is normal
+    // Only show products where showToCustomer is explicitly true
     if (customerType === "normal") {
       transformedProducts = transformedProducts.filter(
         (product) => product.showToCustomer === true

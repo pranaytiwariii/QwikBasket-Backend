@@ -22,20 +22,6 @@ export const getProducts = async (req, res) => {
       customerType = "business", // default to business
     } = req.query;
 
-    console.log("=== getProducts ===");
-    console.log("Query params:", {
-      category,
-      subcategory,
-      search,
-      minPrice,
-      maxPrice,
-      sortBy,
-      sortOrder,
-      page,
-      limit,
-      customerType,
-    });
-
     // Build query object
     const query = {};
 
@@ -61,14 +47,11 @@ export const getProducts = async (req, res) => {
 
     // Price range filter - use appropriate price field based on customerType
     const priceField = customerType === "normal" ? "priceForCustomer" : "price";
-    console.log("Price field used:", priceField, "customerType:", customerType);
     if (minPrice || maxPrice) {
       query[priceField] = {};
       if (minPrice) query[priceField].$gte = Number(minPrice);
       if (maxPrice) query[priceField].$lte = Number(maxPrice);
     }
-
-    console.log("Built query:", JSON.stringify(query, null, 2));
 
     // Build sort object
     const sort = {};
@@ -86,17 +69,6 @@ export const getProducts = async (req, res) => {
       .limit(Number(limit))
       .lean();
 
-    console.log("Products fetched from DB:", products.length);
-    if (products.length > 0) {
-      console.log("Sample product (before transformation):", {
-        id: products[0]._id,
-        name: products[0].name,
-        price: products[0].price,
-        priceForCustomer: products[0].priceForCustomer,
-        showToCustomer: products[0].showToCustomer,
-      });
-    }
-
     // Transform products to show appropriate price based on customerType
     let transformedProducts = products.map((product) => {
       const { price, priceForCustomer, ...rest } = product;
@@ -109,29 +81,13 @@ export const getProducts = async (req, res) => {
 
     // Additional filter: Remove products with showToCustomer: false when customerType is normal
     if (customerType === "normal") {
-      const beforeFilter = transformedProducts.length;
       transformedProducts = transformedProducts.filter(
         (product) => product.showToCustomer === true
-      );
-      console.log(
-        `Filtered ${
-          beforeFilter - transformedProducts.length
-        } products with showToCustomer=false`
       );
     }
 
     // Get total count for pagination
     const totalProducts = await Products.countDocuments(query);
-
-    console.log("Query result:", {
-      productsFound: products.length,
-      totalProducts,
-      transformedCount: transformedProducts.length,
-    });
-    console.log(
-      "Sample product:",
-      transformedProducts[0] || "No products found"
-    );
 
     res.status(200).json({
       success: true,
@@ -162,9 +118,6 @@ export const getProductById = async (req, res) => {
     const { id } = req.params;
     const { customerType = "business" } = req.query;
 
-    console.log("=== getProductById ===");
-    console.log("Product ID:", id, "UserType:", customerType);
-
     // Build query
     const query = { _id: id };
 
@@ -173,29 +126,26 @@ export const getProductById = async (req, res) => {
       query.showToCustomer = true;
     }
 
-    console.log("Query for product:", JSON.stringify(query, null, 2));
-
     const product = await Products.findOne(query)
       .populate("category", "name image")
       .populate("subcategory", "name")
       .lean();
 
     if (!product) {
-      console.log("Product not found with query:", query);
       return res.status(404).json({
         success: false,
         message: "Product not found",
       });
     }
 
-    console.log("Product found (before transformation):", {
-      id: product._id,
-      name: product.name,
-      price: product.price,
-      priceForCustomer: product.priceForCustomer,
-      showToCustomer: product.showToCustomer,
-      stockInPackets: product.stockInPackets,
-    });
+    // Additional safety check: Remove product if showToCustomer is false when customerType is normal
+    // Only show product if showToCustomer is explicitly true
+    if (customerType === "normal" && product.showToCustomer !== true) {
+      return res.status(404).json({
+        success: false,
+        message: "Product not found",
+      });
+    }
 
     // Transform product to show appropriate price based on customerType
     const { price, priceForCustomer, ...rest } = product;
@@ -223,7 +173,7 @@ export const getProductById = async (req, res) => {
       .lean();
 
     // Transform similar products
-    const transformedSimilarProducts = similarProducts.map((prod) => {
+    let transformedSimilarProducts = similarProducts.map((prod) => {
       const {
         price: spPrice,
         priceForCustomer: spCustomerPrice,
@@ -236,13 +186,13 @@ export const getProductById = async (req, res) => {
       };
     });
 
-    console.log("Product found:", {
-      id: transformedProduct._id,
-      name: transformedProduct.name,
-      price: transformedProduct.price,
-      showToCustomer: transformedProduct.showToCustomer,
-      similarProductsCount: transformedSimilarProducts.length,
-    });
+    // Additional filter: Remove products with showToCustomer: false when customerType is normal
+    // Only show products where showToCustomer is explicitly true
+    if (customerType === "normal") {
+      transformedSimilarProducts = transformedSimilarProducts.filter(
+        (product) => product.showToCustomer === true
+      );
+    }
 
     res.status(200).json({
       success: true,
@@ -278,9 +228,6 @@ export const getProductsByCategory = async (req, res) => {
       limit = 10,
       customerType = "business",
     } = req.query;
-
-    console.log("=== getProductsByCategory ===");
-    console.log("Category ID:", categoryId, "UserType:", customerType);
 
     // Check if category exists
     const category = await Category.findById(categoryId);
@@ -324,7 +271,7 @@ export const getProductsByCategory = async (req, res) => {
       .lean();
 
     // Transform products to show appropriate price based on customerType
-    const transformedProducts = products.map((product) => {
+    let transformedProducts = products.map((product) => {
       const { price, priceForCustomer, ...rest } = product;
       return {
         ...rest,
@@ -333,14 +280,15 @@ export const getProductsByCategory = async (req, res) => {
       };
     });
 
-    const totalProducts = await Products.countDocuments(query);
+    // Additional filter: Remove products with showToCustomer: false when customerType is normal
+    // Only show products where showToCustomer is explicitly true
+    if (customerType === "normal") {
+      transformedProducts = transformedProducts.filter(
+        (product) => product.showToCustomer === true
+      );
+    }
 
-    console.log("Products by category result:", {
-      categoryId,
-      productsFound: products.length,
-      totalProducts,
-      transformedCount: transformedProducts.length,
-    });
+    const totalProducts = await Products.countDocuments(query);
 
     res.status(200).json({
       success: true,
@@ -380,9 +328,6 @@ export const getProductsBySubCategory = async (req, res) => {
       limit = 10,
       customerType = "business",
     } = req.query;
-
-    console.log("=== getProductsBySubCategory ===");
-    console.log("Subcategory ID:", subcategoryId, "UserType:", customerType);
 
     // Check if subcategory exists
     const subcategory = await SubCategory.findById(subcategoryId).populate(
@@ -427,7 +372,7 @@ export const getProductsBySubCategory = async (req, res) => {
       .lean();
 
     // Transform products to show appropriate price based on customerType
-    const transformedProducts = products.map((product) => {
+    let transformedProducts = products.map((product) => {
       const { price, priceForCustomer, ...rest } = product;
       return {
         ...rest,
@@ -436,14 +381,15 @@ export const getProductsBySubCategory = async (req, res) => {
       };
     });
 
-    const totalProducts = await Products.countDocuments(query);
+    // Additional filter: Remove products with showToCustomer: false when customerType is normal
+    // Only show products where showToCustomer is explicitly true
+    if (customerType === "normal") {
+      transformedProducts = transformedProducts.filter(
+        (product) => product.showToCustomer === true
+      );
+    }
 
-    console.log("Products by subcategory result:", {
-      subcategoryId,
-      productsFound: products.length,
-      totalProducts,
-      transformedCount: transformedProducts.length,
-    });
+    const totalProducts = await Products.countDocuments(query);
 
     res.status(200).json({
       success: true,
@@ -489,21 +435,6 @@ export const createProduct = async (req, res) => {
       sellerFssai,
       description,
     } = req.body;
-
-    console.log("=== createProduct ===");
-    console.log("Request body:", {
-      name,
-      category,
-      subcategory,
-      stockInPackets,
-      packagingQuantity,
-      unit,
-      price,
-      mrpPrice,
-      showToCustomer,
-      priceForCustomer,
-      imagesCount: req.files?.length || 0,
-    });
 
     // Check if category exists
     const categoryExists = await Category.findById(category);
@@ -570,21 +501,11 @@ export const createProduct = async (req, res) => {
       productData.subcategory = subcategory;
     }
 
-    console.log("Product data to create:", productData);
-
     const product = await Products.create(productData);
     await product.populate([
       { path: "category", select: "name image" },
       { path: "subcategory", select: "name" },
     ]);
-
-    console.log("Product created successfully:", {
-      id: product._id,
-      name: product.name,
-      price: product.price,
-      priceForCustomer: product.priceForCustomer,
-      stockInPackets: product.stockInPackets,
-    });
 
     res.status(201).json({
       success: true,
@@ -604,14 +525,11 @@ export const createProduct = async (req, res) => {
 // @desc    Update product
 // @route   PUT /api/products/:id
 // @access  Private/Admin
+
 export const updateProduct = async (req, res) => {
   try {
     const { id } = req.params;
     const updateData = req.body;
-
-    console.log("=== updateProduct ===");
-    console.log("Product ID:", id);
-    console.log("Update data received:", updateData);
 
     const product = await Products.findById(id);
     if (!product) {
@@ -621,6 +539,7 @@ export const updateProduct = async (req, res) => {
       });
     }
 
+    // Validate category if provided
     if (updateData.category) {
       const categoryExists = await Category.findById(updateData.category);
       if (!categoryExists) {
@@ -631,6 +550,7 @@ export const updateProduct = async (req, res) => {
       }
     }
 
+    // Validate subcategory if provided
     if (updateData.subcategory && updateData.subcategory.trim() !== "") {
       const subcategoryExists = await SubCategory.findById(
         updateData.subcategory
@@ -641,7 +561,6 @@ export const updateProduct = async (req, res) => {
           message: "Subcategory not found",
         });
       }
-
       const categoryId = updateData.category || product.category;
       if (
         subcategoryExists.parentCategory.toString() !== categoryId.toString()
@@ -655,23 +574,155 @@ export const updateProduct = async (req, res) => {
       updateData.subcategory = null;
     }
 
-    if (req.files && req.files.length > 5) {
-      return res.status(400).json({
-        success: false,
-        message: "Maximum 5 images allowed",
-      });
-    }
-    if (req.files && req.files.length > 0) {
-      let newImages = [];
-      for (const file of req.files) {
-        const b64 = Buffer.from(file.buffer).toString("base64");
-        const url = "data:" + file.mimetype + ";base64," + b64;
-        const uploadResult = await imageUploadUtil(url);
-        newImages.push(uploadResult.secure_url);
+    // Handle images: Merge existing URLs with newly uploaded files
+    // Parse existingImages from request body (sent as JSON string in FormData)
+    let existingImageUrls = [];
+    const hasExistingImagesField =
+      updateData.existingImages !== undefined &&
+      updateData.existingImages !== null &&
+      updateData.existingImages !== "";
+
+    if (hasExistingImagesField) {
+      try {
+        // If it's already an array, use it directly; otherwise parse JSON string
+        if (Array.isArray(updateData.existingImages)) {
+          existingImageUrls = updateData.existingImages;
+        } else if (typeof updateData.existingImages === "string") {
+          // Handle empty string case
+          if (updateData.existingImages.trim() === "") {
+            existingImageUrls = [];
+          } else {
+            existingImageUrls = JSON.parse(updateData.existingImages);
+          }
+        }
+      } catch (parseError) {
+        console.error("Error parsing existingImages:", parseError);
+        return res.status(400).json({
+          success: false,
+          message:
+            "Invalid existingImages format. Expected JSON array or array of URLs.",
+          error: parseError.message,
+        });
       }
-      updateData.images = newImages;
+    } else {
+      // If existingImages not provided and no new files, keep existing images
+      if (!req.files || req.files.length === 0) {
+        existingImageUrls = product.images || [];
+      }
     }
 
+    // Validate existing image URLs (should be valid HTTP/HTTPS URLs)
+    existingImageUrls = existingImageUrls.filter((url) => {
+      return (
+        typeof url === "string" &&
+        (url.startsWith("http://") || url.startsWith("https://"))
+      );
+    });
+
+    // Handle image updates
+    const hasNewFiles =
+      req.files && Array.isArray(req.files) && req.files.length > 0;
+
+    if (hasNewFiles) {
+      // Validate file types (only allow images)
+      const allowedMimeTypes = [
+        "image/jpeg",
+        "image/jpg",
+        "image/png",
+        "image/gif",
+        "image/webp",
+      ];
+      const invalidFiles = req.files.filter(
+        (file) => !allowedMimeTypes.includes(file.mimetype)
+      );
+
+      if (invalidFiles.length > 0) {
+        return res.status(400).json({
+          success: false,
+          message:
+            "Invalid file type. Only image files (JPEG, PNG, GIF, WebP) are allowed.",
+          invalidFiles: invalidFiles.map((f) => ({
+            name: f.originalname,
+            type: f.mimetype,
+          })),
+        });
+      }
+
+      // Validate file count (existing + new should not exceed 10, as per route limit)
+      const maxImages = 10;
+      const totalImageCount = existingImageUrls.length + req.files.length;
+      if (totalImageCount > maxImages) {
+        return res.status(400).json({
+          success: false,
+          message: `Maximum ${maxImages} images allowed. You have ${existingImageUrls.length} existing and ${req.files.length} new images (total: ${totalImageCount})`,
+        });
+      }
+
+      // Upload new images with error handling
+      let newImageUrls = [];
+      const uploadErrors = [];
+
+      for (let i = 0; i < req.files.length; i++) {
+        const file = req.files[i];
+        try {
+          // Validate file buffer exists
+          if (!file.buffer) {
+            throw new Error("File buffer is missing");
+          }
+
+          // Convert to base64 data URL
+          const b64 = Buffer.from(file.buffer).toString("base64");
+          const url = "data:" + file.mimetype + ";base64," + b64;
+
+          // Upload to Cloudinary
+          const uploadResult = await imageUploadUtil(url);
+
+          if (!uploadResult || !uploadResult.secure_url) {
+            throw new Error(
+              "Upload failed: No secure URL returned from Cloudinary"
+            );
+          }
+
+          newImageUrls.push(uploadResult.secure_url);
+        } catch (uploadError) {
+          console.error(
+            `Error uploading file ${file.originalname}:`,
+            uploadError
+          );
+          uploadErrors.push({
+            filename: file.originalname,
+            error: uploadError.message,
+          });
+        }
+      }
+
+      // If any uploads failed, return error (don't partially update)
+      if (uploadErrors.length > 0) {
+        return res.status(500).json({
+          success: false,
+          message: "Failed to upload some images",
+          uploadErrors: uploadErrors,
+          uploadedCount: newImageUrls.length,
+          failedCount: uploadErrors.length,
+        });
+      }
+
+      // Merge existing URLs with newly uploaded URLs
+      updateData.images = [...existingImageUrls, ...newImageUrls];
+    } else if (hasExistingImagesField) {
+      // No new files, but existingImages field was provided
+      // This means user wants to update which existing images to keep (remove some)
+      const maxImages = 10;
+      if (existingImageUrls.length > maxImages) {
+        return res.status(400).json({
+          success: false,
+          message: `Maximum ${maxImages} images allowed`,
+        });
+      }
+      updateData.images = existingImageUrls;
+    }
+
+    // Convert numeric fields
     if (updateData.stockInPackets !== undefined) {
       updateData.stockInPackets = Number(updateData.stockInPackets);
     }
@@ -693,7 +744,18 @@ export const updateProduct = async (req, res) => {
       updateData.priceForCustomer = Number(updateData.priceForCustomer);
     }
 
-    console.log("Processed update data:", updateData);
+    // Remove existingImages from updateData before saving (it's not a product field)
+    if (updateData.existingImages !== undefined) {
+      delete updateData.existingImages;
+    }
+
+    // Ensure images array exists if being updated
+    if (updateData.images !== undefined && !Array.isArray(updateData.images)) {
+      return res.status(400).json({
+        success: false,
+        message: "Images must be an array",
+      });
+    }
 
     const updatedProduct = await Products.findByIdAndUpdate(id, updateData, {
       new: true,
@@ -703,13 +765,12 @@ export const updateProduct = async (req, res) => {
       { path: "subcategory", select: "name" },
     ]);
 
-    console.log("Product updated successfully:", {
-      id: updatedProduct._id,
-      name: updatedProduct.name,
-      price: updatedProduct.price,
-      priceForCustomer: updatedProduct.priceForCustomer,
-      stockInPackets: updatedProduct.stockInPackets,
-    });
+    if (!updatedProduct) {
+      return res.status(404).json({
+        success: false,
+        message: "Product not found after update",
+      });
+    }
 
     res.status(200).json({
       success: true,
@@ -718,10 +779,31 @@ export const updateProduct = async (req, res) => {
     });
   } catch (error) {
     console.error("Error in updateProduct:", error);
-    res.status(500).json({
+    console.error("Error stack:", error.stack);
+
+    // Provide more specific error messages
+    let errorMessage = "Error updating product";
+    let statusCode = 500;
+
+    if (error.name === "ValidationError") {
+      errorMessage =
+        "Validation error: " +
+        Object.values(error.errors)
+          .map((e) => e.message)
+          .join(", ");
+      statusCode = 400;
+    } else if (error.name === "CastError") {
+      errorMessage = "Invalid data format: " + error.message;
+      statusCode = 400;
+    } else if (error.message) {
+      errorMessage = error.message;
+    }
+
+    res.status(statusCode).json({
       success: false,
-      message: "Error updating product",
-      error: error.message,
+      message: errorMessage,
+      error: process.env.NODE_ENV === "development" ? error.message : undefined,
+      stack: process.env.NODE_ENV === "development" ? error.stack : undefined,
     });
   }
 };
@@ -733,23 +815,15 @@ export const deleteProduct = async (req, res) => {
   try {
     const { id } = req.params;
 
-    console.log("=== deleteProduct ===");
-    console.log("Product ID to delete:", id);
-
     const product = await Products.findById(id);
     if (!product) {
-      console.log("Product not found:", id);
       return res.status(404).json({
         success: false,
         message: "Product not found",
       });
     }
 
-    console.log("Deleting product:", { id: product._id, name: product.name });
-
     await Products.findByIdAndDelete(id);
-
-    console.log("Product deleted successfully:", id);
 
     res.status(200).json({
       success: true,
@@ -780,9 +854,6 @@ export const searchProducts = async (req, res) => {
       limit = 10,
       customerType = "business",
     } = req.query;
-
-    console.log("=== searchProducts ===");
-    console.log("Search query:", q, "UserType:", customerType);
 
     if (!q) {
       return res.status(400).json({
@@ -825,7 +896,7 @@ export const searchProducts = async (req, res) => {
       .lean();
 
     // Transform products to show appropriate price based on customerType
-    const transformedProducts = products.map((product) => {
+    let transformedProducts = products.map((product) => {
       const { price, priceForCustomer, ...rest } = product;
       return {
         ...rest,
@@ -834,14 +905,15 @@ export const searchProducts = async (req, res) => {
       };
     });
 
-    const totalProducts = await Products.countDocuments(query);
+    // Additional filter: Remove products with showToCustomer: false when customerType is normal
+    // Only show products where showToCustomer is explicitly true
+    if (customerType === "normal") {
+      transformedProducts = transformedProducts.filter(
+        (product) => product.showToCustomer === true
+      );
+    }
 
-    console.log("Search results:", {
-      searchQuery: q,
-      productsFound: products.length,
-      totalProducts,
-      transformedCount: transformedProducts.length,
-    });
+    const totalProducts = await Products.countDocuments(query);
 
     res.status(200).json({
       success: true,
@@ -878,19 +950,6 @@ export const getProductsAdmin = async (req, res) => {
       page = 1,
       limit = 10,
     } = req.query;
-
-    console.log("=== getProductsAdmin ===");
-    console.log("Query params:", {
-      category,
-      subcategory,
-      search,
-      minPrice,
-      maxPrice,
-      sortBy,
-      sortOrder,
-      page,
-      limit,
-    });
 
     // Build query object
     const query = {};
@@ -954,12 +1013,6 @@ export const getProductsAdmin = async (req, res) => {
     // Get total count for pagination (without price filter for accurate count)
     const totalProducts = await Products.countDocuments(query);
 
-    console.log("Admin products result:", {
-      productsFound: products.length,
-      totalProducts,
-      afterPriceFilter: productsWithNumbers.length,
-    });
-
     res.status(200).json({
       success: true,
       data: productsWithNumbers,
@@ -987,9 +1040,6 @@ export const getProductsAdmin = async (req, res) => {
 export const getProductByIdAdmin = async (req, res) => {
   try {
     const { id } = req.params;
-
-    console.log("=== getProductByIdAdmin ===");
-    console.log("Product ID:", id);
 
     const product = await Products.findById(id)
       .populate("category", "name image")
@@ -1032,15 +1082,6 @@ export const getProductByIdAdmin = async (req, res) => {
       packagingQuantity: Number(prod.packagingQuantity),
     }));
 
-    console.log("Admin product found:", {
-      id: productWithNumbers._id,
-      name: productWithNumbers.name,
-      price: productWithNumbers.price,
-      priceForCustomer: productWithNumbers.priceForCustomer,
-      stockInPackets: productWithNumbers.stockInPackets,
-      similarProductsCount: similarProductsWithNumbers.length,
-    });
-
     res.status(200).json({
       success: true,
       data: {
@@ -1074,9 +1115,6 @@ export const getProductsByCategoryAdmin = async (req, res) => {
       page = 1,
       limit = 10,
     } = req.query;
-
-    console.log("=== getProductsByCategoryAdmin ===");
-    console.log("Category ID:", categoryId);
 
     // Check if category exists
     const category = await Category.findById(categoryId);
@@ -1133,13 +1171,6 @@ export const getProductsByCategoryAdmin = async (req, res) => {
 
     const totalProducts = await Products.countDocuments(query);
 
-    console.log("Admin products by category result:", {
-      categoryId,
-      productsFound: products.length,
-      totalProducts,
-      afterPriceFilter: productsWithNumbers.length,
-    });
-
     res.status(200).json({
       success: true,
       data: productsWithNumbers,
@@ -1177,9 +1208,6 @@ export const getProductsBySubCategoryAdmin = async (req, res) => {
       page = 1,
       limit = 10,
     } = req.query;
-
-    console.log("=== getProductsBySubCategoryAdmin ===");
-    console.log("Subcategory ID:", subcategoryId);
 
     // Check if subcategory exists
     const subcategory = await SubCategory.findById(subcategoryId).populate(
@@ -1237,13 +1265,6 @@ export const getProductsBySubCategoryAdmin = async (req, res) => {
 
     const totalProducts = await Products.countDocuments(query);
 
-    console.log("Admin products by subcategory result:", {
-      subcategoryId,
-      productsFound: products.length,
-      totalProducts,
-      afterPriceFilter: productsWithNumbers.length,
-    });
-
     res.status(200).json({
       success: true,
       data: productsWithNumbers,
@@ -1280,9 +1301,6 @@ export const searchProductsAdmin = async (req, res) => {
       page = 1,
       limit = 10,
     } = req.query;
-
-    console.log("=== searchProductsAdmin ===");
-    console.log("Search query:", q);
 
     if (!q) {
       return res.status(400).json({
@@ -1337,13 +1355,6 @@ export const searchProductsAdmin = async (req, res) => {
     }));
 
     const totalProducts = await Products.countDocuments(query);
-
-    console.log("Admin search results:", {
-      searchQuery: q,
-      productsFound: products.length,
-      totalProducts,
-      afterPriceFilter: productsWithNumbers.length,
-    });
 
     res.status(200).json({
       success: true,
