@@ -112,7 +112,7 @@ export const addDeliveryAgent = async (req, res) => {
     }
 
     // Validate phone number format
-    if (!/^\d{10}$/.test(phone)) {
+    if (!/^\+91\d{10}$/.test(phone)) {
       return res.status(400).json({
         success: false,
         message: "Please enter a valid 10-digit phone number",
