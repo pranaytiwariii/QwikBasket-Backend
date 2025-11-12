@@ -212,9 +212,9 @@ export const createPendingOrder = async (req, res) => {
       const product = item.productId;
       let weightInKg = 0;
 
-      if (product.defaultUnit === "gms") {
+      if (product.unit === "gms") {
         weightInKg = product.packagingQuantity / 1000; 
-      } else if (product.defaultUnit === "kg" || product.defaultUnit === "ltr") {
+      } else if (product.unit === "kg" || product.unit === "ltr") {
         weightInKg = product.packagingQuantity; 
       } else {
         throw new Error(`Unsupported unit type: ${product.defaultUnit}`);

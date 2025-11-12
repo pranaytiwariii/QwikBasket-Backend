@@ -348,31 +348,6 @@ export const updateOrderInvoice = async (req, res) => {
     });
   }
 };
-export const getOrdersByUserId = async (req, res) => {
-  try {
-    const { userId } = req.params;
-
-    if (!mongoose.Types.ObjectId.isValid(userId)) {
-      return res
-        .status(400)
-        .json({ success: false, message: "Invalid User ID" });
-    }
-
-    const orders = await Order.find({ userId: userId }).sort({ createdAt: -1 });
-
-    if (!orders) {
-      return res.status(200).json({ success: true, data: [] });
-    }
-
-    res.status(200).json({ success: true, data: orders });
-  } catch (error) {
-    console.error("Error in getOrdersByUserId:", error);
-    res.status(500).json({
-      success: false,
-      message: "Failed to fetch user orders",
-    });
-  }
-};
 
 // Endpoint: GET /api/orders/user/:userId
 export const getUserOrders = async (req, res) => {
