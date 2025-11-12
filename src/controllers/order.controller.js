@@ -19,6 +19,11 @@ const generateOrderId = async () => {
   return `ORD-${yyyy}${mm}${dd}-${sequentialId}`;
 };
 
+// Helper to generate a 6-digit OTP
+const generateDeliveryOtp = () => {
+  return Math.floor(100000 + Math.random() * 900000).toString();
+};
+
 const mapPaymentMethod = (frontendKey) => {
   const map = {
     credit: "Credit Card",
@@ -98,7 +103,10 @@ export const createOrder = async (req, res) => {
       paymentStatus: paymentMethod === "credit" ? "Pending" : "Completed", // 'Pending' for COD/Credit
     };
 
-    // 4. Create the new Order
+    // 4. Generate delivery OTP
+    const deliveryOtp = generateDeliveryOtp();
+
+    // 5. Create the new Order
     const newOrder = new Order({
       orderId: await generateOrderId(),
       userId: userId,
@@ -108,11 +116,12 @@ export const createOrder = async (req, res) => {
       paymentDetails: paymentDetails,
       status: "Pending", // Initial status
       orderProgress: [{ status: "Pending", notes: "Order placed by customer" }],
+      deliveryOtp: deliveryOtp,
     });
 
     await newOrder.save({ session });
 
-    // 5. Decrement Product stock (using bulkWrite for efficiency)
+    // 6. Decrement Product stock (using bulkWrite for efficiency)
     const stockUpdates = cart.items.map((item) => ({
       updateOne: {
         filter: { _id: item.productId._id },
@@ -122,16 +131,23 @@ export const createOrder = async (req, res) => {
 
     await Product.bulkWrite(stockUpdates, { session });
 
-    // 6. Clear the user's cart
+    // 7. Clear the user's cart
     await Cart.deleteOne({ user: userId }, { session });
 
-    // 7. Commit the transaction
+    // 8. Commit the transaction
     await session.commitTransaction();
+
+    // Create response object without OTP in the order data (for security)
+    const orderResponse = newOrder.toObject();
+    delete orderResponse.deliveryOtp;
 
     res.status(201).json({
       success: true,
       message: "Order placed successfully!",
-      data: { order: newOrder },
+      data: {
+        order: orderResponse,
+        deliveryOtp: deliveryOtp, // OTP only visible to user in response
+      },
     });
   } catch (error) {
     // Rollback transaction on error
@@ -213,15 +229,38 @@ export const getAllOrders = async (req, res) => {
 export const getOrderById = async (req, res) => {
   try {
     const { orderId } = req.params;
-    const order = await Order.findOne({ orderId }).populate(
-      "userId",
-      "name email phone"
-    );
+    const order = await Order.findOne({ orderId })
+      .populate("userId", "name email phone")
+      .populate("items.productId") // Populate product details for each item
+      .populate(
+        "deliveryAgentId",
+        "name phone email status vehicleType vehicleNumber rating totalDeliveries"
+      ); // Populate delivery agent details
+
     if (!order) {
       return res
         .status(404)
         .json({ success: false, message: "Order not found" });
     }
+
+    // Format items with product details
+    const formattedItems = order.items.map((item) => ({
+      productId: item.productId?._id || null,
+      productName: item.name,
+      quantity: item.quantity,
+      price: item.price,
+      productDetails: item.productId
+        ? {
+            name: item.productId.name,
+            images: item.productId.images || [],
+            price: item.productId.price,
+            mrpPrice: item.productId.mrpPrice,
+            priceForCustomer: item.productId.priceForCustomer,
+            unit: item.productId.unit,
+          }
+        : null,
+    }));
+
     const formattedOrder = {
       id: order.orderId,
       date: new Date(order.createdAt).toLocaleDateString("en-US", {
@@ -232,18 +271,31 @@ export const getOrderById = async (req, res) => {
       customerName: order.userId?.name || "N/A",
       customerEmail: order.userId?.email || "N/A",
       customerPhone: order.userId?.phone || "N/A",
-      items: order.items.reduce((sum, item) => sum + item.quantity, 0),
+      items: formattedItems,
+      totalItems: order.items.reduce((sum, item) => sum + item.quantity, 0),
       amount: order.totalAmount,
       paymentMethod: order.paymentDetails.paymentMethod,
       status: order.status,
       invoiceUrl: order.invoiceUrl || null,
       shippingMethod: order.shippingMethod,
       cardLast4: order.paymentDetails.cardLast4 || "1234",
-      productName: order.items.map((item) => item.name).join(", "),
-      unitPrice: order.items[0]?.price || 0,
       shippingAddress: order.shippingAddress,
       orderProgress: order.orderProgress,
+      deliveryOtp: order.deliveryOtp,
+      deliveryAgent: order.deliveryAgentId
+        ? {
+            id: order.deliveryAgentId._id,
+            name: order.deliveryAgentId.name,
+            phone: order.deliveryAgentId.phone,
+            status: order.deliveryAgentId.status,
+            vehicleType: order.deliveryAgentId.vehicleType,
+            vehicleNumber: order.deliveryAgentId.vehicleNumber,
+            rating: order.deliveryAgentId.rating,
+            totalDeliveries: order.deliveryAgentId.totalDeliveries,
+          }
+        : null,
     };
+    console.log("formattedOrder:", formattedOrder);
     res.status(200).json({ success: true, data: formattedOrder });
   } catch (error) {
     console.error("Error in getting order by id:", error);
