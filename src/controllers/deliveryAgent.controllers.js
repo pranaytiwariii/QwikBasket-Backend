@@ -112,7 +112,7 @@ export const addDeliveryAgent = async (req, res) => {
     }
 
     // Validate phone number format
-    if (!/^\d{10}$/.test(phone)) {
+    if (!/^\+91\d{10}$/.test(phone)) {
       return res.status(400).json({
         success: false,
         message: "Please enter a valid 10-digit phone number",
@@ -127,11 +127,22 @@ export const addDeliveryAgent = async (req, res) => {
         message: "Delivery agent with this phone number already exists",
       });
     }
+    let loginId;
+    let isUnique = false;
+    while (!isUnique) {
+      // Generates a 6-digit numeric ID
+      loginId = Math.floor(100000 + Math.random() * 900000).toString();
+      const existing = await DeliveryAgent.findOne({ loginId });
+      if (!existing) {
+        isUnique = true;
+      }
+    }
 
     // Create new agent with only name and phone
     const newAgent = await DeliveryAgent.create({
       name,
       phone,
+      loginId,
       status: "available",
       isActive: true,
     });

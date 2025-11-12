@@ -11,7 +11,13 @@ const deliveryAgentSchema = new Schema(
       type: String,
       required: true,
       unique: true,
-      match: [/^\d{10}$/, "Please enter a valid 10-digit phone number"],
+      match: [/^\+91\d{10}$/, "Please enter a valid 10-digit phone number"],
+    },
+    loginId: {
+      type: String,
+      required: true,
+      unique: true,
+      trim: true,
     },
     email: {
       type: String,
@@ -100,6 +106,7 @@ const deliveryAgentSchema = new Schema(
 // Index for faster queries
 deliveryAgentSchema.index({ phone: 1 });
 deliveryAgentSchema.index({ status: 1 });
+deliveryAgentSchema.index({ loginId: 1 })
 deliveryAgentSchema.index({ isActive: 1 });
 
 const DeliveryAgent = model("DeliveryAgent", deliveryAgentSchema);
