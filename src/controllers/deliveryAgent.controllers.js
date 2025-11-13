@@ -1,6 +1,7 @@
 import DeliveryAgent from "../models/deliveryAgent.models.js";
 import Order from "../models/order.models.js";
 import { generateAccessToken, generateRefreshToken } from "../utils/JWT.js";
+import Payment from "../models/payment.models.js";
 
 // Agent Login - Verify agent by phone number
 export const agentLogin = async (req, res) => {
@@ -490,6 +491,8 @@ export const completeDelivery = async (req, res) => {
         message: "Order not found",
       });
     }
+    console.log(order);
+    console.log(otp);
 
     // Validate OTP
     if (order.deliveryOtp !== otp) {
@@ -640,7 +643,20 @@ export const getAgentOrders = async (req, res) => {
         message: "Delivery agent not found",
       });
     }
+    // Get order IDs to fetch payment info
+    const orderIds = agent.assignedOrders
+      .filter(order => order.orderId)
+      .map(order => order.orderId._id);
 
+    // Fetch payment information for all orders
+    const payments = await Payment.find({ orderId: { $in: orderIds } })
+      .select('orderId status amount method')
+      .lean();
+    console.log(payments)
+    // Create a map for quick payment lookup
+    const paymentMap = new Map(
+      payments.map(payment => [payment.orderId.toString(), payment])
+    );
     // Filter and format active orders
     const activeOrders = agent.assignedOrders
       .filter(order => 
@@ -651,6 +667,7 @@ export const getAgentOrders = async (req, res) => {
       )
       .map(order => {
         const orderDoc = order.orderId;
+        const payment = paymentMap.get(orderDoc._id.toString());
         return {
           id: orderDoc.orderId, // Order number string (e.g., "ORD-1001")
           _id: orderDoc._id, // MongoDB ID
@@ -669,7 +686,10 @@ export const getAgentOrders = async (req, res) => {
           items: orderDoc.items,
           deliveryOtp: orderDoc.deliveryOtp, 
           assignedAt: order.assignedAt,
-          assignmentStatus: order.status
+          assignmentStatus: order.status,
+          paymentStatus: payment?.status || 'UNKNOWN',
+          paymentAmount: payment?.amount || orderDoc.totalAmount,
+          paymentMethod: payment?.method || orderDoc.paymentMethod,
         };
       });
 
