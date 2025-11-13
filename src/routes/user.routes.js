@@ -12,6 +12,7 @@ import {
 } from "../controllers/user.controllers.js";
 import {refreshToken , verifyToken} from "../middlewares/auth.middlewares.js";
 import { getCitybyUserID } from "../controllers/address.controller.js";
+import { getUserById } from "../controllers/admin.controllers.js";
 
 const router = Router();
 
@@ -19,7 +20,7 @@ const router = Router();
 router.route('/send-otp').post(sendOtp);
 router.route('/verify-otp').post(verifyOtp);
 router.post("/refresh-token", refreshToken);
-
+router.route("/userDetailsbyID/:id").get(getUserById)
 
 
 //protected routes
@@ -35,5 +36,6 @@ router.route('/register').post(verifyToken,businessDetails)
 router.route('/business/:phone').get(verifyToken, getBusinessDetails)
 router.route('/address').post(verifyToken, addressDetails)
 router.route('/verification/:phone').get(verifyToken, UserVerification);
+
 
 export default router;

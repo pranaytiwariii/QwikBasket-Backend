@@ -1,0 +1,5 @@
+### Rest API Endpoints
+#### GET /api/items
+Retrieve a list of items.
+#### POST /api/items
+Create a new item.  

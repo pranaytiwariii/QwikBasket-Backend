@@ -18,7 +18,7 @@ const businessDetailsSchema = new Schema(
       required: function() { 
         return this.userId && this.userId.customerType === 'business';
       },
-      enum: ["restaurant", "canteen", "retailer", "business", "others"],
+      enum: ["restaurant", "canteen", "retailer", "business", "others", "hotel"],
       // lowercase: true,
       // trim: true
     },
