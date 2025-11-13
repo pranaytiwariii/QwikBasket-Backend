@@ -3,6 +3,7 @@ import Order from "../models/order.models.js";
 import Address from "../models/address.models.js";
 import Cart from "../models/cart.models.js";
 import Product from "../models/product.models.js";
+import Payment from "../models/payment.models.js"
 
 // Helper to generate a unique Order ID
 const generateOrderId = async () => {
@@ -120,6 +121,19 @@ export const createOrder = async (req, res) => {
     });
 
     await newOrder.save({ session });
+    if (mapPaymentMethod(paymentMethod) === "Cash on Delivery") {
+      const newPayment = new Payment({
+        orderId: newOrder._id,
+        userId,
+        transactionId: await generatePaymentId(),
+        amount: paymentSummary.totalAmount,
+        status: "PENDING", 
+        method: "Cash on Delivery",
+        date: new Date(),
+      });
+    
+      await newPayment.save({ session });
+    }
 
     // 6. Decrement Product stock (using bulkWrite for efficiency)
     const stockUpdates = cart.items.map((item) => ({
