@@ -3,7 +3,7 @@ import Order from "../models/order.models.js";
 import Address from "../models/address.models.js";
 import Cart from "../models/cart.models.js";
 import Product from "../models/product.models.js";
-
+import Payment from "../models/payment.models.js"
 import BusinessDetails from "../models/businessDetails.models.js";
 import User from "../models/user.models.js";
 // Helper to generate a unique Order ID
@@ -19,6 +19,29 @@ const generateOrderId = async () => {
   const sequentialId = String(count + 1).padStart(4, "0");
 
   return `ORD-${yyyy}${mm}${dd}-${sequentialId}`;
+};
+const generatePaymentId = async () => {
+  const date = new Date();
+  const yyyy = date.getFullYear();
+  const mm = String(date.getMonth() + 1).padStart(2, '0');
+  const dd = String(date.getDate()).padStart(2, '0');
+  
+  const datePrefix = `PAY-${yyyy}${mm}${dd}`;
+  
+  const latestPayment = await Payment.findOne({ 
+    transactionId: { $regex: `^${datePrefix}` } 
+  })
+  .sort({ transactionId: -1 })
+  .select('transactionId');
+  
+  let sequentialId = 1;
+  
+  if (latestPayment) {
+    const lastSequence = parseInt(latestPayment.transactionId.split('-').pop());
+    sequentialId = lastSequence + 1;
+  }
+  
+  return `${datePrefix}-${String(sequentialId).padStart(4, '0')}`;
 };
 
 // Helper to generate a 6-digit OTP
@@ -122,6 +145,19 @@ export const createOrder = async (req, res) => {
     });
 
     await newOrder.save({ session });
+    if (mapPaymentMethod(paymentMethod) === "Cash on Delivery") {
+      const newPayment = new Payment({
+        orderId: newOrder._id,
+        userId,
+        transactionId: await generatePaymentId(),
+        amount: paymentSummary.totalAmount,
+        status: "PENDING", 
+        method: "Cash on Delivery",
+        date: new Date(),
+      });
+    
+      await newPayment.save({ session });
+    }
 
     // 6. Decrement Product stock (using bulkWrite for efficiency)
     const stockUpdates = cart.items.map((item) => ({
