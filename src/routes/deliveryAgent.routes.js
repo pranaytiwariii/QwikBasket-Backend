@@ -11,6 +11,7 @@ import {
   completeDelivery,
   updateAgentStatus,
   getAgentStats,
+  getAgentOrders
 } from "../controllers/deliveryAgent.controllers.js";
 import { verifyToken, verifyAdmin } from "../middlewares/auth.middlewares.js";
 
@@ -25,10 +26,11 @@ router.route("/").get(verifyToken, verifyAdmin, getAllDeliveryAgents);
 router.route("/available").get(verifyToken, verifyAdmin, getAvailableAgents);
 router.route("/").post(verifyToken, verifyAdmin, addDeliveryAgent);
 router.route("/assign").post(verifyToken, verifyAdmin, assignOrderToAgent);
-router.route("/complete").post(verifyToken, verifyAdmin, completeDelivery);
+router.route("/complete").post(verifyToken, completeDelivery);
 router.route("/:id").get(verifyToken, getDeliveryAgent);
 router.route("/:id").put(verifyToken, verifyAdmin, updateDeliveryAgent);
 router.route("/:id/status").patch(verifyToken, verifyAdmin, updateAgentStatus);
 router.route("/:id").delete(verifyToken, verifyAdmin, deleteDeliveryAgent);
+router.route("/:id/orders").get(verifyToken,getAgentOrders);
 
 export default router;
