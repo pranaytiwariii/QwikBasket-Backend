@@ -57,10 +57,12 @@ export const verifyOtp = async (req,res) => {
             const user = await UserModels.findOne({ phone });
             const payload = {
                 user: user._id,
+                userId: user._id, // Add userId for easier access
                 phone: user.phone,
                 isVerified: user.isVerified,
                 userType: user.userType,
                 customerType: user.customerType,
+                userStatus: user.status, // Add status to JWT payload
             };
 
             const accessToken = generateAccessToken(payload);

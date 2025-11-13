@@ -11,7 +11,7 @@ const deliveryAgentSchema = new Schema(
       type: String,
       required: true,
       unique: true,
-      match: [/^\d{10}$/, "Please enter a valid 10-digit phone number"],
+      // match: [/^\d{10}$/, "Please enter a valid 10-digit phone number"],
     },
     email: {
       type: String,

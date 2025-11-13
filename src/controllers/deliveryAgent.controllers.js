@@ -1,5 +1,67 @@
 import DeliveryAgent from "../models/deliveryAgent.models.js";
 import Order from "../models/order.models.js";
+import { generateAccessToken, generateRefreshToken } from "../utils/JWT.js";
+
+// Agent Login - Verify agent by phone number
+export const agentLogin = async (req, res) => {
+  try {
+    const { phone } = req.body;
+
+    if (!phone) {
+      return res.status(400).json({
+        success: false,
+        message: "Phone number is required",
+      });
+    }
+
+    // Find agent by phone number
+    const agent = await DeliveryAgent.findOne({ phone, isActive: true });
+
+    if (!agent) {
+      return res.status(404).json({
+        success: false,
+        message: "Delivery agent not found or inactive",
+      });
+    }
+
+    // Generate tokens for the agent
+    const payload = {
+      agentId: agent._id,
+      phone: agent.phone,
+      name: agent.name,
+      userType: "agent",
+      status: agent.status,
+    };
+
+    const accessToken = generateAccessToken(payload);
+    const refreshToken = generateRefreshToken(payload);
+
+    return res.status(200).json({
+      success: true,
+      message: "Agent logged in successfully",
+      accessToken,
+      refreshToken,
+      agent: {
+        id: agent._id,
+        name: agent.name,
+        phone: agent.phone,
+        email: agent.email,
+        status: agent.status,
+        vehicleType: agent.vehicleType,
+        vehicleNumber: agent.vehicleNumber,
+        totalDeliveries: agent.totalDeliveries,
+        rating: agent.rating,
+      },
+    });
+  } catch (error) {
+    console.error("Error during agent login:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Error during agent login",
+      error: error.message,
+    });
+  }
+};
 
 // Get all delivery agents
 export const getAllDeliveryAgents = async (req, res) => {
@@ -111,13 +173,13 @@ export const addDeliveryAgent = async (req, res) => {
       });
     }
 
-    // Validate phone number format
-    if (!/^\d{10}$/.test(phone)) {
-      return res.status(400).json({
-        success: false,
-        message: "Please enter a valid 10-digit phone number",
-      });
-    }
+    // // Validate phone number format
+    // if (!/^\d{10}$/.test(phone)) {
+    //   return res.status(400).json({
+    //     success: false,
+    //     message: "Please enter a valid 10-digit phone number",
+    //   });
+    // }
 
     // Check if agent already exists
     const existingAgent = await DeliveryAgent.findOne({ phone });
