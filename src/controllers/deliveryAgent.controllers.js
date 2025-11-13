@@ -1,6 +1,7 @@
 import DeliveryAgent from "../models/deliveryAgent.models.js";
 import Order from "../models/order.models.js";
 import { generateAccessToken, generateRefreshToken } from "../utils/JWT.js";
+import Payment from "../models/payment.models.js";
 
 // Agent Login - Verify agent by phone number
 export const agentLogin = async (req, res) => {
@@ -490,6 +491,8 @@ export const completeDelivery = async (req, res) => {
         message: "Order not found",
       });
     }
+    console.log(order);
+    console.log(otp);
 
     // Validate OTP
     if (order.deliveryOtp !== otp) {
@@ -618,6 +621,88 @@ export const getAgentStats = async (req, res) => {
     return res.status(500).json({
       success: false,
       message: "Error fetching agent statistics",
+      error: error.message,
+    });
+  }
+};
+export const getAgentOrders = async (req, res) => {
+  try {
+    const { id } = req.params; 
+
+    const agent = await DeliveryAgent.findById(id).populate({
+      path: 'assignedOrders.orderId',
+      populate: [
+        { path: 'items.productId', select: 'name images' },
+        { path: 'userId', select: 'name phone' }
+      ]
+    });
+
+    if (!agent) {
+      return res.status(404).json({
+        success: false,
+        message: "Delivery agent not found",
+      });
+    }
+    // Get order IDs to fetch payment info
+    const orderIds = agent.assignedOrders
+      .filter(order => order.orderId)
+      .map(order => order.orderId._id);
+
+    // Fetch payment information for all orders
+    const payments = await Payment.find({ orderId: { $in: orderIds } })
+      .select('orderId status amount method')
+      .lean();
+    console.log(payments)
+    // Create a map for quick payment lookup
+    const paymentMap = new Map(
+      payments.map(payment => [payment.orderId.toString(), payment])
+    );
+    // Filter and format active orders
+    const activeOrders = agent.assignedOrders
+      .filter(order => 
+        order.orderId && 
+        order.status !== 'delivered' &&
+        order.orderId.status !== 'Delivered' &&
+        order.orderId.status !== 'Cancelled'
+      )
+      .map(order => {
+        const orderDoc = order.orderId;
+        const payment = paymentMap.get(orderDoc._id.toString());
+        return {
+          id: orderDoc.orderId, // Order number string (e.g., "ORD-1001")
+          _id: orderDoc._id, // MongoDB ID
+          status: orderDoc.status,
+          customerName: orderDoc.customerName || orderDoc.customerId?.name,
+          customerPhone: orderDoc.customerPhone || orderDoc.customerId?.phone,
+          paymentMethod: orderDoc.paymentMethod,
+          totalAmount: orderDoc.totalAmount,
+          deliveryTime: order.assignedAt,
+          address: orderDoc.shippingAddress?.completeAddress || 
+                   orderDoc.shippingAddress?.addressLine1 || 
+                   'Address not available',
+          productName: orderDoc.items?.[0]?.productId?.name || 
+                       orderDoc.items?.[0]?.productName || 
+                       'Product',
+          items: orderDoc.items,
+          deliveryOtp: orderDoc.deliveryOtp, 
+          assignedAt: order.assignedAt,
+          assignmentStatus: order.status,
+          paymentStatus: payment?.status || 'UNKNOWN',
+          paymentAmount: payment?.amount || orderDoc.totalAmount,
+          paymentMethod: payment?.method || orderDoc.paymentMethod,
+        };
+      });
+
+    return res.status(200).json({
+      success: true,
+      count: activeOrders.length,
+      data: activeOrders,
+    });
+  } catch (error) {
+    console.error("Error fetching agent orders:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Error fetching agent orders",
       error: error.message,
     });
   }
