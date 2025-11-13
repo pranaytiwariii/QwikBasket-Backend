@@ -12,7 +12,6 @@ const router = express.Router();
 router.post("/", createOrder);
 router.get("/user/:userId", getUserOrders);
 router.get("/:orderId", getOrderById);
-router.get("/:orderId", getOrderById);
 router.get("/", getAllOrders);
 router.patch("/:orderId/status", updateOrderStatus);
 router.delete("/:orderId", deleteOrder);

@@ -91,7 +91,7 @@ export const getAllDeliveryAgents = async (req, res) => {
     const agents = await DeliveryAgent.find(query)
       .populate("currentOrderId", "orderId totalAmount")
       .sort({ createdAt: -1 });
-
+    console.log("==============agents==========", agents);
     return res.status(200).json({
       success: true,
       count: agents.length,
@@ -113,12 +113,86 @@ export const getAvailableAgents = async (req, res) => {
     const agents = await DeliveryAgent.find({
       status: "available",
       isActive: true,
-    }).sort({ totalDeliveries: 1, rating: -1 });
+    })
+      .select(
+        "name phone email status rating totalDeliveries vehicleType vehicleNumber assignedOrders currentOrderId"
+      )
+      .lean();
+
+    if (!agents.length) {
+      return res.status(200).json({
+        success: true,
+        count: 0,
+        data: [],
+      });
+    }
+
+    const agentIds = agents.map((agent) => agent._id);
+
+    const activeOrders = await Order.find({
+      deliveryAgentId: { $in: agentIds },
+      status: { $nin: ["Delivered", "Cancelled"] },
+    })
+      .select(
+        "orderId status totalAmount createdAt shippingAddress orderProgress items deliveryAgentId"
+      )
+      .sort({ createdAt: 1 })
+      .lean();
+
+    const ordersByAgent = new Map();
+
+    activeOrders.forEach((order) => {
+      const agentKey = order.deliveryAgentId?.toString();
+      if (!agentKey) return;
+      if (!ordersByAgent.has(agentKey)) {
+        ordersByAgent.set(agentKey, []);
+      }
+
+      const totalItems = Array.isArray(order.items)
+        ? order.items.reduce((sum, item) => sum + (item.quantity || 0), 0)
+        : 0;
+
+      ordersByAgent.get(agentKey).push({
+        id: order.orderId,
+        status: order.status,
+        totalAmount: order.totalAmount,
+        createdAt: order.createdAt,
+        totalItems,
+        shippingAddress: order.shippingAddress,
+        orderProgress: order.orderProgress,
+      });
+    });
+
+    const enrichedAgents = agents.map((agent) => {
+      const agentKey = agent._id.toString();
+      const assignedOrders = ordersByAgent.get(agentKey) || [];
+
+      return {
+        ...agent,
+        assignedOrderCount: assignedOrders.length,
+        assignedOrders,
+      };
+    });
+
+    enrichedAgents.sort((a, b) => {
+      if (a.assignedOrderCount !== b.assignedOrderCount) {
+        return a.assignedOrderCount - b.assignedOrderCount;
+      }
+      const aDeliveries = a.totalDeliveries || 0;
+      const bDeliveries = b.totalDeliveries || 0;
+      if (aDeliveries !== bDeliveries) {
+        return aDeliveries - bDeliveries;
+      }
+      const aRating = a.rating || 0;
+      const bRating = b.rating || 0;
+      return bRating - aRating;
+    });
+    console.log("==============enrichedAgents==========", enrichedAgents);
 
     return res.status(200).json({
       success: true,
-      count: agents.length,
-      data: agents,
+      count: enrichedAgents.length,
+      data: enrichedAgents,
     });
   } catch (error) {
     console.error("Error fetching available agents:", error);
@@ -189,22 +263,10 @@ export const addDeliveryAgent = async (req, res) => {
         message: "Delivery agent with this phone number already exists",
       });
     }
-    let loginId;
-    let isUnique = false;
-    while (!isUnique) {
-      // Generates a 6-digit numeric ID
-      loginId = Math.floor(100000 + Math.random() * 900000).toString();
-      const existing = await DeliveryAgent.findOne({ loginId });
-      if (!existing) {
-        isUnique = true;
-      }
-    }
-
     // Create new agent with only name and phone
     const newAgent = await DeliveryAgent.create({
       name,
       phone,
-      loginId,
       status: "available",
       isActive: true,
     });
