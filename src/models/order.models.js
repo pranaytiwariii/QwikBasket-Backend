@@ -1,5 +1,5 @@
 import mongoose from "mongoose";
-import { model,Schema } from "mongoose";
+import { model, Schema } from "mongoose";
 // A sub schema for items within an order
 const OrderItemSchema=new Schema({
     productId:{
@@ -98,6 +98,17 @@ const OrderSchema=new Schema({
     orderProgress:[OrderStatusHistorySchema],
     invoiceUrl:{
         type:String,
-    }
-},{timestamps:true});
+    },
+    deliveryOtp: {
+      type: String,
+      required: true,
+    },
+    deliveryAgentId: {
+      type: Schema.Types.ObjectId,
+      ref: "DeliveryAgent",
+      default: null,
+    },
+  },
+  { timestamps: true }
+);
 export default mongoose.model("Order",OrderSchema);

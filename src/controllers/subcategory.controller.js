@@ -53,6 +53,7 @@ export const getSubCategoryById = async (req, res) => {
 export const createSubCategory = async (req, res) => {
   try {
     const { name, parentCategory } = req.body;
+
     const category = await Category.findById(parentCategory);
     if (!category) {
       return res.status(404).json({
@@ -60,6 +61,7 @@ export const createSubCategory = async (req, res) => {
         message: "Parent category not found",
       });
     }
+
     const existingSubCategory = await SubCategory.findOne({
       name,
       parentCategory,
@@ -71,15 +73,54 @@ export const createSubCategory = async (req, res) => {
       });
     }
 
-    let imageUrl = "";
-    if (req.file) {
-      const b64 = Buffer.from(req.file.buffer).toString("base64");
-      const url = "data:" + req.file.mimetype + ";base64," + b64;
-      const uploadResult = await imageUploadUtil(url);
-      imageUrl = uploadResult.secure_url;
-    } else {
-      return res.status(400).json({ message: "Subcategory image is required" });
+    if (!req.file) {
+      return res.status(400).json({
+        success: false,
+        message: "Subcategory image is required",
+      });
     }
+
+    // Validate file type (only allow images)
+    const allowedMimeTypes = [
+      "image/jpeg",
+      "image/jpg",
+      "image/png",
+      "image/gif",
+      "image/webp",
+    ];
+
+    if (!allowedMimeTypes.includes(req.file.mimetype)) {
+      return res.status(400).json({
+        success: false,
+        message:
+          "Invalid file type. Only image files (JPEG, PNG, GIF, WebP) are allowed.",
+        receivedType: req.file.mimetype,
+      });
+    }
+
+    // Validate file buffer exists
+    if (!req.file.buffer) {
+      return res.status(400).json({
+        success: false,
+        message: "File buffer is missing",
+      });
+    }
+
+    // Convert to base64 data URL
+    const b64 = Buffer.from(req.file.buffer).toString("base64");
+    const url = "data:" + req.file.mimetype + ";base64," + b64;
+
+    // Upload to Cloudinary
+    const uploadResult = await imageUploadUtil(url);
+
+    if (!uploadResult || !uploadResult.secure_url) {
+      return res.status(500).json({
+        success: false,
+        message: "Upload failed: No secure URL returned from Cloudinary",
+      });
+    }
+
+    const imageUrl = uploadResult.secure_url;
 
     const subcategory = await SubCategory.create({
       name,
@@ -87,16 +128,39 @@ export const createSubCategory = async (req, res) => {
       image: imageUrl,
     });
     await subcategory.populate("parentCategory", "name image");
+
     res.status(201).json({
       success: true,
       data: subcategory,
       message: "Subcategory created successfully",
     });
   } catch (error) {
-    res.status(500).json({
+    console.error("Error in createSubCategory:", error);
+    console.error("Error stack:", error.stack);
+
+    // Provide more specific error messages
+    let errorMessage = "Error creating subcategory";
+    let statusCode = 500;
+
+    if (error.name === "ValidationError") {
+      errorMessage =
+        "Validation error: " +
+        Object.values(error.errors)
+          .map((e) => e.message)
+          .join(", ");
+      statusCode = 400;
+    } else if (error.name === "CastError") {
+      errorMessage = "Invalid data format: " + error.message;
+      statusCode = 400;
+    } else if (error.message) {
+      errorMessage = error.message;
+    }
+
+    res.status(statusCode).json({
       success: false,
-      message: "Error creating subcategory",
-      error: error.message,
+      message: errorMessage,
+      error: process.env.NODE_ENV === "development" ? error.message : undefined,
+      stack: process.env.NODE_ENV === "development" ? error.stack : undefined,
     });
   }
 };
@@ -106,6 +170,7 @@ export const updateSubCategory = async (req, res) => {
   try {
     const { id } = req.params;
     const { name, parentCategory } = req.body;
+
     const subcategory = await SubCategory.findById(id);
     if (!subcategory) {
       return res.status(404).json({
@@ -113,6 +178,7 @@ export const updateSubCategory = async (req, res) => {
         message: "Subcategory not found",
       });
     }
+
     if (
       parentCategory &&
       parentCategory !== subcategory.parentCategory.toString()
@@ -125,6 +191,7 @@ export const updateSubCategory = async (req, res) => {
         });
       }
     }
+
     if (name || parentCategory) {
       const checkParentCategory = parentCategory || subcategory.parentCategory;
       const checkName = name || subcategory.name;
@@ -142,21 +209,75 @@ export const updateSubCategory = async (req, res) => {
       }
     }
 
-    let imageUrl = subcategory.image; // Keep existing image if no new one provided
+    const updateData = {};
+    if (name) updateData.name = name;
+    if (parentCategory) updateData.parentCategory = parentCategory;
 
     // Handle image upload if file is provided
     if (req.file) {
-      const b64 = Buffer.from(req.file.buffer).toString("base64");
-      const url = "data:" + req.file.mimetype + ";base64," + b64;
-      const uploadResult = await imageUploadUtil(url);
-      imageUrl = uploadResult.secure_url;
+      try {
+        // Validate file type (only allow images)
+        const allowedMimeTypes = [
+          "image/jpeg",
+          "image/jpg",
+          "image/png",
+          "image/gif",
+          "image/webp",
+        ];
+
+        if (!allowedMimeTypes.includes(req.file.mimetype)) {
+          return res.status(400).json({
+            success: false,
+            message:
+              "Invalid file type. Only image files (JPEG, PNG, GIF, WebP) are allowed.",
+            receivedType: req.file.mimetype,
+          });
+        }
+
+        // Validate file buffer exists
+        if (!req.file.buffer) {
+          return res.status(400).json({
+            success: false,
+            message: "File buffer is missing",
+          });
+        }
+
+        // Convert to base64 data URL
+        const b64 = Buffer.from(req.file.buffer).toString("base64");
+        const url = "data:" + req.file.mimetype + ";base64," + b64;
+
+        // Upload to Cloudinary
+        const uploadResult = await imageUploadUtil(url);
+
+        if (!uploadResult || !uploadResult.secure_url) {
+          throw new Error(
+            "Upload failed: No secure URL returned from Cloudinary"
+          );
+        }
+
+        updateData.image = uploadResult.secure_url;
+      } catch (uploadError) {
+        console.error("Error uploading subcategory image:", uploadError);
+        return res.status(500).json({
+          success: false,
+          message: "Failed to upload image",
+          error: uploadError.message,
+        });
+      }
     }
 
     const updatedSubCategory = await SubCategory.findByIdAndUpdate(
       id,
-      { name, parentCategory, image: imageUrl },
+      updateData,
       { new: true, runValidators: true }
     ).populate("parentCategory", "name image");
+
+    if (!updatedSubCategory) {
+      return res.status(404).json({
+        success: false,
+        message: "Subcategory not found after update",
+      });
+    }
 
     res.status(200).json({
       success: true,
@@ -164,10 +285,32 @@ export const updateSubCategory = async (req, res) => {
       message: "Subcategory updated successfully",
     });
   } catch (error) {
-    res.status(500).json({
+    console.error("Error in updateSubCategory:", error);
+    console.error("Error stack:", error.stack);
+
+    // Provide more specific error messages
+    let errorMessage = "Error updating subcategory";
+    let statusCode = 500;
+
+    if (error.name === "ValidationError") {
+      errorMessage =
+        "Validation error: " +
+        Object.values(error.errors)
+          .map((e) => e.message)
+          .join(", ");
+      statusCode = 400;
+    } else if (error.name === "CastError") {
+      errorMessage = "Invalid data format: " + error.message;
+      statusCode = 400;
+    } else if (error.message) {
+      errorMessage = error.message;
+    }
+
+    res.status(statusCode).json({
       success: false,
-      message: "Error updating subcategory",
-      error: error.message,
+      message: errorMessage,
+      error: process.env.NODE_ENV === "development" ? error.message : undefined,
+      stack: process.env.NODE_ENV === "development" ? error.stack : undefined,
     });
   }
 };

@@ -15,21 +15,25 @@ const ProductSchema = new mongoose.Schema({
     ref: "SubCategory",
   },
 
-  // Unit type.If the default unit is in gms then only the conversion from gms to kg will be allowed.Kg to gms will not be allowed.
-  defaultUnit: {
+  //This is the price for the business user per packet
+  price: { type: Number, default: 0, required: true },
+  
+  //This is the MRP price for the product
+  mrpPrice: { type: Number, default: 0, required: true },
+
+  showToCustomer: { type: Boolean, default: false },
+  priceForCustomer: { type: Number, required: true },
+  // Stock of packets in the warehouse
+  stockInPackets: { type: Number, required: true },
+
+  //Quantity per package
+  packagingQuantity: { type: Number, required: true },
+  unit: {
     type: String,
     enum: ["gms", "kg", "ltr"],
     required: true,
   },
-
-  //Price per kg or price per ltr
-  pricePerKg: { type: Number, default: 0, required: true },
-
-  // Stock in KG (for solids) or liters (for liquids)
-  stockQuantity: { type: Number, required: true },
-
-//This will be the minimum packaging quantity.User can choose to buy more than this quantity.For eg if the packaging quantity is 500 gms, user can buy 1000 gms, 1500 gms, 2000 gms, etc.
-  packagingQuantity: { type: Number, required: true },
+  //pack text = {packagingQuantity} {unit}
 
   origin: { type: String, required: true },
   hybrid: { type: String, required: true },

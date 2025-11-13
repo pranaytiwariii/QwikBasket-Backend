@@ -189,11 +189,22 @@ export const addDeliveryAgent = async (req, res) => {
         message: "Delivery agent with this phone number already exists",
       });
     }
+    let loginId;
+    let isUnique = false;
+    while (!isUnique) {
+      // Generates a 6-digit numeric ID
+      loginId = Math.floor(100000 + Math.random() * 900000).toString();
+      const existing = await DeliveryAgent.findOne({ loginId });
+      if (!existing) {
+        isUnique = true;
+      }
+    }
 
     // Create new agent with only name and phone
     const newAgent = await DeliveryAgent.create({
       name,
       phone,
+      loginId,
       status: "available",
       isActive: true,
     });
@@ -340,22 +351,37 @@ export const assignOrderToAgent = async (req, res) => {
       });
     }
 
+    // Find the order first to get its _id
+    const order = await Order.findOne({ orderId: orderId });
+    if (!order) {
+      return res.status(404).json({
+        success: false,
+        message: "Order not found",
+      });
+    }
+
     // Update agent status
     agent.status = "delivery_assigned";
-    agent.currentOrderId = orderId;
+    agent.currentOrderId = order._id; // Use MongoDB _id, not orderId string
     agent.assignedOrders.push({
-      orderId: orderId,
+      orderId: order._id, // Use MongoDB _id for reference
       assignedAt: new Date(),
       status: "assigned",
     });
 
     await agent.save();
 
-    // You can also update the order model here if needed
-    // await Order.findByIdAndUpdate(orderId, { 
-    //   deliveryAgentId: agentId,
-    //   deliveryStatus: "assigned"
-    // });
+    // Update the order with delivery agent details
+    order.deliveryAgentId = agentId;
+    if (order.status === "Confirmed" || order.status === "Pending") {
+      order.status = "Out for delivery";
+    }
+    order.orderProgress.push({
+      status: "Out for delivery",
+      notes: `Order assigned to delivery agent: ${agent.name}`,
+      date: new Date(),
+    });
+    await order.save();
 
     return res.status(200).json({
       success: true,
@@ -375,8 +401,17 @@ export const assignOrderToAgent = async (req, res) => {
 // Mark delivery as completed
 export const completeDelivery = async (req, res) => {
   try {
-    const { agentId, orderId } = req.body;
+    const { agentId, orderId, otp } = req.body;
 
+    // Validate required fields
+    if (!agentId || !orderId || !otp) {
+      return res.status(400).json({
+        success: false,
+        message: "Agent ID, Order ID, and OTP are required",
+      });
+    }
+
+    // Find the agent
     const agent = await DeliveryAgent.findById(agentId);
     if (!agent) {
       return res.status(404).json({
@@ -385,9 +420,27 @@ export const completeDelivery = async (req, res) => {
       });
     }
 
+    // Find the order and validate OTP
+    const order = await Order.findOne({ orderId: orderId });
+    if (!order) {
+      return res.status(404).json({
+        success: false,
+        message: "Order not found",
+      });
+    }
+
+    // Validate OTP
+    if (order.deliveryOtp !== otp) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid OTP. Please provide the correct delivery OTP.",
+      });
+    }
+
     // Update the assigned order status
     const orderIndex = agent.assignedOrders.findIndex(
-      (order) => order.orderId.toString() === orderId
+      (assignedOrder) =>
+        assignedOrder.orderId.toString() === order._id.toString()
     );
 
     if (orderIndex !== -1) {
@@ -401,6 +454,15 @@ export const completeDelivery = async (req, res) => {
     agent.totalDeliveries += 1;
 
     await agent.save();
+
+    // Update order status to "Delivered"
+    order.status = "Delivered";
+    order.orderProgress.push({
+      status: "Delivered",
+      notes: "Order delivered successfully",
+      date: new Date(),
+    });
+    await order.save();
 
     return res.status(200).json({
       success: true,

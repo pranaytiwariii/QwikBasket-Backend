@@ -23,6 +23,11 @@ const generateOrderId = async () => {
 
   return `ORD-${yyyy}${mm}${dd}-${sequentialId}`;
 };
+
+// Helper to generate a 6-digit OTP
+const generateDeliveryOtp = () => {
+  return Math.floor(100000 + Math.random() * 900000).toString();
+};
   const generatePaymentId = async () => {
     const date = new Date();
     const yyyy = date.getFullYear();
@@ -121,9 +126,9 @@ export const verifyPaymentAndCreateOrder = async (req, res) => {
     const orderItems = cart.items.map((item) => {
       const product = item.productId;
       if (!product) throw new Error(`Product not found`);
-      if (product.quantityAvailable < item.quantity) {
+      if (product.stockInPackets < item.quantity) {
         stockIssues.push(
-          `${product.name} only has ${product.quantityAvailable} in stock.`
+          `${product.name} only has ${product.stockInPackets} in stock.`
         );
       }
       // Use the price already calculated and stored in the cart
@@ -151,11 +156,15 @@ export const verifyPaymentAndCreateOrder = async (req, res) => {
       paymentStatus: "Completed",
       paymentInfo: razorpay_order_id,
     };
+    
+    // Generate delivery OTP
+    const deliveryOtp = generateDeliveryOtp();
+    
     const newOrder = new Order({
       orderId: await generateOrderId(),
       userId: userId,
       items: orderItems,
-      totalAmount: paymentSummary.totalAmount,
+      totalAmount: cart.totalAmount,
       shippingAddress: shippingAddress,
       paymentDetails: paymentDetails,
       status: "Confirmed",
@@ -163,21 +172,27 @@ export const verifyPaymentAndCreateOrder = async (req, res) => {
         { status: "Pending", notes: "Order placed by customer" },
         { status: "Confirmed", notes: "Payment received" },
       ],
+      deliveryOtp: deliveryOtp,
     });
     await newOrder.save({ session });
     const stockUpdates = cart.items.map((item) => ({
       updateOne: {
         filter: { _id: item.productId._id },
-        update: { $inc: { quantityAvailable: -item.quantity } },
+        update: { $inc: { stockInPackets: -item.quantity } },
       },
     }));
     await Product.bulkWrite(stockUpdates, { session });
     await Cart.deleteOne({ user: userId }, { session });
     await session.commitTransaction();
+    
+    const orderResponse = newOrder.toObject();
+    delete orderResponse.deliveryOtp;
+    
     res.status(201).json({
       success: true,
       message: "Order placed successfully!",
-      order: newOrder,
+      order: orderResponse,
+      deliveryOtp: deliveryOtp, // OTP only visible to user in response
     });
   } catch (error) {
     await session.abortTransaction();
@@ -212,9 +227,9 @@ export const createPendingOrder = async (req, res) => {
       const product = item.productId;
       let weightInKg = 0;
 
-      if (product.defaultUnit === "gms") {
+      if (product.unit === "gms") {
         weightInKg = product.packagingQuantity / 1000; 
-      } else if (product.defaultUnit === "kg" || product.defaultUnit === "ltr") {
+      } else if (product.unit === "kg" || product.unit === "ltr") {
         weightInKg = product.packagingQuantity; 
       } else {
         throw new Error(`Unsupported unit type: ${product.defaultUnit}`);
@@ -223,7 +238,7 @@ export const createPendingOrder = async (req, res) => {
       return {
         productId: product._id,
         quantity: item.quantity,
-        price: unitPrice,
+        price: item.price,
         name: product.name,
       };
     });
@@ -235,6 +250,9 @@ export const createPendingOrder = async (req, res) => {
       state: address.state,
       landmark: address.landmark,
     };
+
+    // Generate delivery OTP
+    const deliveryOtp = generateDeliveryOtp();
 
     const newOrder = new Order({
       orderId: await generateOrderId(),
@@ -250,6 +268,7 @@ export const createPendingOrder = async (req, res) => {
       orderProgress: [
         { status: "Pending", notes: "Awaiting payment verification" }
       ],
+      deliveryOtp: deliveryOtp,
     });
 
     await newOrder.save({ session });
@@ -269,10 +288,15 @@ export const createPendingOrder = async (req, res) => {
 
     await session.commitTransaction();
 
+    // Create response object without OTP in the order data (for security)
+    const orderResponse = newOrder.toObject();
+    delete orderResponse.deliveryOtp;
+
     res.status(201).json({
       success: true,
-      order: newOrder,
+      order: orderResponse,
       payment: newPayment,
+      deliveryOtp: deliveryOtp, // OTP only visible to user in response
     });
   } catch (error) {
     await session.abortTransaction();
