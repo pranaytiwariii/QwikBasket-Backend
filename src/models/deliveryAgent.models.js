@@ -13,12 +13,6 @@ const deliveryAgentSchema = new Schema(
       unique: true,
       match: [/^\+91\d{10}$/, "Please enter a valid 10-digit phone number"],
     },
-    loginId: {
-      type: String,
-      required: true,
-      unique: true,
-      trim: true,
-    },
     email: {
       type: String,
       trim: true,
@@ -49,7 +43,13 @@ const deliveryAgentSchema = new Schema(
         },
         status: {
           type: String,
-          enum: ["assigned", "picked_up", "in_transit", "delivered", "cancelled"],
+          enum: [
+            "assigned",
+            "picked_up",
+            "in_transit",
+            "delivered",
+            "cancelled",
+          ],
           default: "assigned",
         },
       },
@@ -98,15 +98,14 @@ const deliveryAgentSchema = new Schema(
       default: Date.now,
     },
   },
-  { 
-    timestamps: true 
+  {
+    timestamps: true,
   }
 );
 
 // Index for faster queries
 deliveryAgentSchema.index({ phone: 1 });
 deliveryAgentSchema.index({ status: 1 });
-deliveryAgentSchema.index({ loginId: 1 })
 deliveryAgentSchema.index({ isActive: 1 });
 
 const DeliveryAgent = model("DeliveryAgent", deliveryAgentSchema);

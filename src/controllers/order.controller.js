@@ -3,7 +3,8 @@ import Order from "../models/order.models.js";
 import Address from "../models/address.models.js";
 import Cart from "../models/cart.models.js";
 import Product from "../models/product.models.js";
-
+import BusinessDetails from "../models/businessDetails.models.js";
+import User from "../models/user.models.js";
 // Helper to generate a unique Order ID
 const generateOrderId = async () => {
   const date = new Date();
@@ -165,7 +166,7 @@ export const createOrder = async (req, res) => {
 export const getAllOrders = async (req, res) => {
   try {
     const orders = await Order.find()
-      .populate("userId", "name email phone")
+      .populate("userId", "phone customerType")
       .sort({ createdAt: -1 });
     const formattedOrders = orders.map((order) => ({
       id: order.orderId,
@@ -174,9 +175,8 @@ export const getAllOrders = async (req, res) => {
         month: "short",
         day: "numeric",
       }),
-      customerName: order.userId?.name || "N/A",
-      customerEmail: order.userId?.email || "N/A",
       customerPhone: order.userId?.phone || "N/A",
+      customerType: order.userId?.customerType || "N/A",
       items: order.items.length,
       amount: order.totalAmount,
       paymentMethod: order.paymentDetails.paymentMethod,
@@ -197,40 +197,12 @@ export const getAllOrders = async (req, res) => {
   }
 };
 
-// // Endpoint: GET /api/orders/:orderId
-// export const getOrderById = async (req, res) => {
-//   const { orderId } = req.params;
-
-//   if (!orderId) {
-//     return res.status(400).json({ success: false, message: "Order ID is required" });
-//   }
-
-//   try {
-//     const order = await Order.findById(orderId)
-//       .populate('items.productId', 'name imageUrl pricePerKg weightInKg');
-
-//     if (!order) {
-//       return res.status(404).json({ success: false, message: "Order not found" });
-//     }
-
-//     res.status(200).json({
-//       success: true,
-//       data: order,
-//     });
-//   } catch (error) {
-//     console.error("Error in getOrderById:", error);
-//     res.status(500).json({
-//       success: false,
-//       message: error.message || "Internal server error",
-//     });
-//   }
-// };
 // GET single order by ID
 export const getOrderById = async (req, res) => {
   try {
+    console.log("==============getOrderById==========");
     const { orderId } = req.params;
     const order = await Order.findOne({ orderId })
-      .populate("userId", "name email phone")
       .populate("items.productId") // Populate product details for each item
       .populate(
         "deliveryAgentId",
@@ -243,7 +215,13 @@ export const getOrderById = async (req, res) => {
         .json({ success: false, message: "Order not found" });
     }
 
+    const businessDetails = await BusinessDetails.findOne({
+      userId: order.userId,
+    });
+    const userDetails = await User.findOne({ _id: order.userId });
+    
     // Format items with product details
+    console.log("==============userDetails==========", userDetails);
     const formattedItems = order.items.map((item) => ({
       productId: item.productId?._id || null,
       productName: item.name,
@@ -251,7 +229,6 @@ export const getOrderById = async (req, res) => {
       price: item.price,
       productDetails: item.productId
         ? {
-            name: item.productId.name,
             images: item.productId.images || [],
             price: item.productId.price,
             mrpPrice: item.productId.mrpPrice,
@@ -268,9 +245,10 @@ export const getOrderById = async (req, res) => {
         month: "short",
         day: "numeric",
       }),
-      customerName: order.userId?.name || "N/A",
-      customerEmail: order.userId?.email || "N/A",
-      customerPhone: order.userId?.phone || "N/A",
+      customerName: businessDetails?.name || "N/A",
+      customerEmail: businessDetails?.email || "N/A",
+      customerPhone: userDetails?.phone || "N/A",
+      customerType: userDetails?.customerType || "N/A",
       items: formattedItems,
       totalItems: order.items.reduce((sum, item) => sum + item.quantity, 0),
       amount: order.totalAmount,
