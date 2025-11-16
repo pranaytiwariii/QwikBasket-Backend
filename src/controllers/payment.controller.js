@@ -222,26 +222,37 @@ export const createPendingOrder = async (req, res) => {
     if (!cart || cart.items.length === 0) throw new Error("Cart is empty");
     if (!address) throw new Error("Address not found");
     if (!user) throw new Error("User not found");
-
-    const orderItems = cart.items.map(item => {
+    const currentHour = new Date().getHours();
+    const immediateItems = [];
+    const nextDayItems = [];
+    const stockIssues = [];
+    cart.items.forEach((item) => {
       const product = item.productId;
-      let weightInKg = 0;
-
-      if (product.unit === "gms") {
-        weightInKg = product.packagingQuantity / 1000; 
-      } else if (product.unit === "kg" || product.unit === "ltr") {
-        weightInKg = product.packagingQuantity; 
-      } else {
-        throw new Error(`Unsupported unit type: ${product.defaultUnit}`);
+      if (!product) {
+        throw new Error(`Product with ID ${item.productId} not found`);
       }
-      const unitPrice = weightInKg * product.pricePerKg;
-      return {
-        productId: product._id,
-        quantity: item.quantity,
-        price: item.price,
-        name: product.name,
-      };
+      
+      // Validate stock
+      if (product.stockInPackets < item.quantity) {
+        stockIssues.push(
+          `${product.name} only has ${product.stockInPackets} in stock.`
+        );
+      }
+      
+      // Group by delivery window
+      if (product.category === 'vegetables' || product.category === 'fruits') {
+        if (currentHour >= 10) {
+          nextDayItems.push(item);
+        } else {
+          immediateItems.push(item);
+        }
+      } else {
+        immediateItems.push(item);
+      }
     });
+    if (stockIssues.length > 0) {
+      throw new Error(`Stock issue: ${stockIssues.join(", ")}`);
+    }
 
     const shippingAddress = {
       completeAddress: address.completeAddress,
@@ -250,53 +261,155 @@ export const createPendingOrder = async (req, res) => {
       state: address.state,
       landmark: address.landmark,
     };
+    const createdOrders = [];
+    const createdPayments = [];
+    // CREATE FIRST ORDER (Immediate/2-hour delivery)
+    if (immediateItems.length > 0) {
+      const immediateTotal = immediateItems.reduce((sum, item) => 
+        sum + (item.price * item.quantity), 0
+      );
+      
+      const deliveryTime = new Date();
+      deliveryTime.setHours(deliveryTime.getHours() + 2);
+      
+      const immediateOrderItems = immediateItems.map(item => {
+        const product = item.productId;
+        let weightInKg=0;
+        if (product.unit === "gms") {
+          weightInKg = product.packagingQuantity / 1000; 
+        } else if (product.unit === "kg" || product.unit === "ltr") {
+          weightInKg = product.packagingQuantity; 
+        } else {
+          throw new Error(`Unsupported unit type: ${product.unit}`);
+        }
+        
+        return {
+          productId: product._id,
+          quantity: item.quantity,
+          price: item.price,
+          name: product.name,
+        };
+      });
+      
+      const immediateOrder = new Order({
+        orderId: await generateOrderId(),
+        userId: userId,
+        items: immediateOrderItems,
+        totalAmount: immediateTotal,
+        shippingAddress: shippingAddress,
+        paymentDetails: {
+          paymentMethod: mapPaymentMethod(paymentMethod),
+          paymentStatus: "Pending",
+        },
+        status: "Pending",
+        orderProgress: [{ 
+          status: "Pending", 
+          notes: `Awaiting payment verification - Delivery by ${deliveryTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}` 
+        }],
+        deliveryOtp: generateDeliveryOtp(),
+      });
+      
+      await immediateOrder.save({ session });
+      createdOrders.push(immediateOrder);
+      
+      // Create payment for immediate order
+      const immediatePayment = new Payment({
+        orderId: immediateOrder._id,
+        userId: userId,
+        transactionId: await generatePaymentId(),
+        amount: immediateTotal,
+        status: "PENDING",
+        method: mapPaymentMethod(paymentMethod),
+        date: new Date(),
+      });
+      await immediatePayment.save({ session });
+      createdPayments.push(immediatePayment);
+    }
 
-    // Generate delivery OTP
-    const deliveryOtp = generateDeliveryOtp();
-
-    const newOrder = new Order({
-      orderId: await generateOrderId(),
-      userId: userId,
-      items: orderItems,
-      totalAmount: paymentSummary.totalAmount,
-      shippingAddress: shippingAddress,
-      paymentDetails: {
-        paymentMethod: mapPaymentMethod(paymentMethod),
-        paymentStatus: "Pending",
-      },
-      status: "Pending",
-      orderProgress: [
-        { status: "Pending", notes: "Awaiting payment verification" }
-      ],
-      deliveryOtp: deliveryOtp,
-    });
-
-    await newOrder.save({ session });
-
-    // Create pending payment
-    const newPayment = new Payment({
-      orderId: newOrder._id,
-      userId: userId,
-      transactionId: await generatePaymentId(),
-      amount: paymentSummary.totalAmount,
-      status: "PENDING",
-      method: mapPaymentMethod(paymentMethod),
-      date: new Date(),
-    });
-
-    await newPayment.save({ session });
+    // CREATE SECOND ORDER (Next day 7-10 AM)
+    if (nextDayItems.length > 0) {
+      const tomorrow = new Date();
+      tomorrow.setDate(tomorrow.getDate() + 1);
+      
+      const nextDayTotal = nextDayItems.reduce((sum, item) => 
+        sum + (item.price * item.quantity), 0
+      );
+      
+      const nextDayOrderItems = nextDayItems.map(item => {
+        const product = item.productId;
+        let weightInKg = 0;
+        if (product.unit === "gms") {
+          weightInKg = product.packagingQuantity / 1000; 
+        } else if (product.unit === "kg" || product.unit === "ltr") {
+          weightInKg = product.packagingQuantity; 
+        } else {
+          throw new Error(`Unsupported unit type: ${product.unit}`);
+        }
+        
+        return {
+          productId: product._id,
+          quantity: item.quantity,
+          price: item.price,
+          name: product.name,
+        };
+      });
+      
+      const nextDayOrder = new Order({
+        orderId: await generateOrderId(),
+        userId: userId,
+        items: nextDayOrderItems,
+        totalAmount: nextDayTotal,
+        shippingAddress: shippingAddress,
+        paymentDetails: {
+          paymentMethod: mapPaymentMethod(paymentMethod),
+          paymentStatus: "Pending",
+        },
+        status: "Pending",
+        orderProgress: [{ 
+          status: "Pending", 
+          notes: `Awaiting payment verification - Delivery ${tomorrow.toLocaleDateString()}, 7 AM - 10 AM` 
+        }],
+        deliveryOtp: generateDeliveryOtp(),
+      });
+      
+      await nextDayOrder.save({ session });
+      createdOrders.push(nextDayOrder);
+      
+      // Create payment for next day order
+      const nextDayPayment = new Payment({
+        orderId: nextDayOrder._id,
+        userId: userId,
+        transactionId: await generatePaymentId(),
+        amount: nextDayTotal,
+        status: "PENDING",
+        method: mapPaymentMethod(paymentMethod),
+        date: new Date(),
+      });
+      await nextDayPayment.save({ session });
+      createdPayments.push(nextDayPayment);
+    }
 
     await session.commitTransaction();
 
-    // Create response object without OTP in the order data (for security)
-    const orderResponse = newOrder.toObject();
-    delete orderResponse.deliveryOtp;
+    // Prepare response
+    const ordersResponse = createdOrders.map(order => {
+      const orderObj = order.toObject();
+      const deliveryOtp = orderObj.deliveryOtp;
+      delete orderObj.deliveryOtp;
+      
+      return {
+        order: orderObj,
+        deliveryOtp: deliveryOtp,
+      };
+    });
 
     res.status(201).json({
       success: true,
-      order: orderResponse,
-      payment: newPayment,
-      deliveryOtp: deliveryOtp, // OTP only visible to user in response
+      data: {
+        orders: ordersResponse,
+        payments: createdPayments,
+        totalOrders: createdOrders.length,
+      },
     });
   } catch (error) {
     await session.abortTransaction();
