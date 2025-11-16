@@ -10,6 +10,7 @@ import {
   deletePayment,
   checkCreditStatus,
   completeCreditPayment,
+  initiateUpiCollectRequest
 } from "../controllers/payment.controller.js";
 
 const router = express.Router();
@@ -26,4 +27,5 @@ router.patch("/payment/:id/status", updatePaymentStatus);
 router.delete("/payment/:id", deletePayment);
 router.get("/credit-status/:userId", checkCreditStatus);
 router.post("/complete-credit-payment", completeCreditPayment);
+router.post("/initiate-upi-collect", initiateUpiCollectRequest)
 export default router;
