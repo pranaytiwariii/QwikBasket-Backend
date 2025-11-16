@@ -7,20 +7,32 @@ import Payment from "../models/payment.models.js"
 import BusinessDetails from "../models/businessDetails.models.js";
 import User from "../models/user.models.js";
 // Helper to generate a unique Order ID
-const generateOrderId = async () => {
+const generateOrderId = async (session) => {
   const date = new Date();
   const yyyy = date.getFullYear();
   const mm = String(date.getMonth() + 1).padStart(2, "0");
   const dd = String(date.getDate()).padStart(2, "0");
 
-  const count = await Order.countDocuments({
-    createdAt: { $gte: new Date(yyyy, mm - 1, dd) },
-  });
-  const sequentialId = String(count + 1).padStart(4, "0");
-
-  return `ORD-${yyyy}${mm}${dd}-${sequentialId}`;
+  const datePrefix = `ORD-${yyyy}${mm}${dd}`;
+  
+  // Find the latest order with this date prefix (works within transaction)
+  const latestOrder = await Order.findOne({ 
+    orderId: { $regex: `^${datePrefix}` } 
+  })
+  .sort({ orderId: -1 })
+  .select('orderId')
+  .session(session);
+  
+  let sequentialId = 1;
+  
+  if (latestOrder) {
+    const lastSequence = parseInt(latestOrder.orderId.split('-').pop());
+    sequentialId = lastSequence + 1;
+  }
+  
+  return `${datePrefix}-${String(sequentialId).padStart(4, '0')}`;
 };
-const generatePaymentId = async () => {
+const generatePaymentId = async (session) => {
   const date = new Date();
   const yyyy = date.getFullYear();
   const mm = String(date.getMonth() + 1).padStart(2, '0');
@@ -32,7 +44,8 @@ const generatePaymentId = async () => {
     transactionId: { $regex: `^${datePrefix}` } 
   })
   .sort({ transactionId: -1 })
-  .select('transactionId');
+  .select('transactionId')
+  .session(session); // ADD THIS
   
   let sequentialId = 1;
   
@@ -77,7 +90,10 @@ export const createOrder = async (req, res) => {
   try {
     // 1. Fetch Cart and Address
     const cart = await Cart.findOne({ user: userId })
-      .populate("items.productId")
+      .populate({
+        path: "items.productId",
+        populate: { path: "category", model: "Category" }
+      })
       .session(session);
     const address = await Address.findById(addressId).session(session);
 
@@ -87,10 +103,14 @@ export const createOrder = async (req, res) => {
     if (!address) {
       throw new Error("Address not found");
     }
+    const currentHour = new Date().getHours();
+    const immediateItems = [];
+    const nextDayItems = [];
+    console.log("Current Hour",currentHour);
 
     // 2. Re-validate stock one last time
     const stockIssues = [];
-    const orderItems = cart.items.map((item) => {
+    cart.items.map((item) => {
       const product = item.productId;
       if (!product)
         throw new Error(`Product with ID ${item.productId} not found`);
@@ -99,13 +119,17 @@ export const createOrder = async (req, res) => {
           `${product.name} only has ${product.stockInPackets} in stock.`
         );
       }
-      // Match the OrderItemSchema
-      return {
-        productId: product._id,
-        quantity: item.quantity,
-        price: item.price,
-        name: product.name,
-      };
+      console.log("CategoryName:",product.category.name);
+      if (product.category.name === 'Vegetables' || product.category.name === 'Fruits') {
+        if (currentHour <= 10) {
+          nextDayItems.push(item);
+          console.log("Yeah boii");
+        } else {
+          immediateItems.push(item);
+        }
+      } else {
+        immediateItems.push(item);
+      }
     });
 
     if (stockIssues.length > 0) {
@@ -121,43 +145,108 @@ export const createOrder = async (req, res) => {
       state: address.state,
       landmark: address.landmark,
     };
-
-    // Match the paymentDetails sub-schema
-    const paymentDetails = {
-      paymentMethod: mapPaymentMethod(paymentMethod),
-      paymentStatus: paymentMethod === "credit" ? "Pending" : "Completed", // 'Pending' for COD/Credit
-    };
-
-    // 4. Generate delivery OTP
-    const deliveryOtp = generateDeliveryOtp();
-
-    // 5. Create the new Order
-    const newOrder = new Order({
-      orderId: await generateOrderId(),
-      userId: userId,
-      items: orderItems,
-      totalAmount: paymentSummary.totalAmount, // Use total from validated summary
-      shippingAddress: shippingAddress,
-      paymentDetails: paymentDetails,
-      status: "Pending", // Initial status
-      orderProgress: [{ status: "Pending", notes: "Order placed by customer" }],
-      deliveryOtp: deliveryOtp,
-    });
-
-    await newOrder.save({ session });
-    if (mapPaymentMethod(paymentMethod) === "Cash on Delivery") {
-      const newPayment = new Payment({
-        orderId: newOrder._id,
-        userId,
-        transactionId: await generatePaymentId(),
-        amount: paymentSummary.totalAmount,
-        status: "PENDING", 
-        method: "Cash on Delivery",
-        date: new Date(),
+    const createdOrders = [];
+    const createdPayments = [];
+    if (immediateItems.length > 0) {
+      const immediateTotal = immediateItems.reduce((sum, item) => 
+        sum + (item.price * item.quantity), 0
+      );
+      
+      const deliveryTime = new Date();
+      deliveryTime.setHours(deliveryTime.getHours() + 2);
+      
+      const immediateOrderItems = immediateItems.map(item => ({
+        productId: item.productId._id,
+        quantity: item.quantity,
+        price: item.price,
+        name: item.productId.name,
+      }));
+      const immediateOrder = new Order({
+        orderId: await generateOrderId(session),
+        userId: userId,
+        items: immediateOrderItems,
+        totalAmount: immediateTotal,
+        shippingAddress: shippingAddress,
+        paymentDetails: {
+          paymentMethod: mapPaymentMethod(paymentMethod),
+          paymentStatus: "Pending" ,
+        },
+        status: "Pending",
+        orderProgress: [{ 
+          status: "Pending", 
+          notes: `Order placed - Delivery by ${deliveryTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}` 
+        }],
+        deliveryOtp: generateDeliveryOtp(),
       });
-    
-      await newPayment.save({ session });
+      await immediateOrder.save({ session });
+      createdOrders.push(immediateOrder);
+      if (mapPaymentMethod(paymentMethod) === "Cash on Delivery") {
+        const immediatePayment = new Payment({
+          orderId: immediateOrder._id,
+          userId,
+          transactionId: await generatePaymentId(session),
+          amount: immediateTotal,
+          status: "PENDING",
+          method: "Cash on Delivery",
+          date: new Date(),
+        });
+        await immediatePayment.save({ session });
+        createdPayments.push(immediatePayment);
+      }
     }
+    if (nextDayItems.length > 0) {
+      const tomorrow = new Date();
+      tomorrow.setDate(tomorrow.getDate() + 1);
+      
+      const nextDayTotal = nextDayItems.reduce((sum, item) => 
+        sum + (item.price * item.quantity), 0
+      );
+      
+      const nextDayOrderItems = nextDayItems.map(item => ({
+        productId: item.productId._id,
+        quantity: item.quantity,
+        price: item.price,
+        name: item.productId.name,
+      }));
+      
+      const nextDayOrder = new Order({
+        orderId: await generateOrderId(session),
+        userId: userId,
+        items: nextDayOrderItems,
+        totalAmount: nextDayTotal,
+        shippingAddress: shippingAddress,
+        paymentDetails: {
+          paymentMethod: mapPaymentMethod(paymentMethod),
+          paymentStatus: "Pending",
+        },
+        status: "Pending",
+        orderProgress: [{ 
+          status: "Pending", 
+          notes: `Order placed - Delivery ${tomorrow.toLocaleDateString()}, 7 AM - 10 AM` 
+        }],
+        deliveryOtp: generateDeliveryOtp(),
+      });
+      
+      await nextDayOrder.save({ session });
+      createdOrders.push(nextDayOrder);
+      
+      // Create payment record for next day order
+      if (mapPaymentMethod(paymentMethod) === "Cash on Delivery") {
+        const nextDayPayment = new Payment({
+          orderId: nextDayOrder._id,
+          userId,
+          transactionId: await generatePaymentId(session),
+          amount: nextDayTotal,
+          status: "PENDING",
+          method: "Cash on Delivery",
+          date: new Date(),
+        });
+        await nextDayPayment.save({ session });
+        createdPayments.push(nextDayPayment);
+      }
+    }
+    console.log("Immediate",immediateItems);
+    console.log("nextDay",nextDayItems);
 
     // 6. Decrement Product stock (using bulkWrite for efficiency)
     const stockUpdates = cart.items.map((item) => ({
@@ -176,15 +265,23 @@ export const createOrder = async (req, res) => {
     await session.commitTransaction();
 
     // Create response object without OTP in the order data (for security)
-    const orderResponse = newOrder.toObject();
-    delete orderResponse.deliveryOtp;
+    const ordersResponse = createdOrders.map(order => {
+      const orderObj = order.toObject();
+      const deliveryOtp = orderObj.deliveryOtp;
+      delete orderObj.deliveryOtp;
+      
+      return {
+        order: orderObj,
+        deliveryOtp: deliveryOtp,
+      };
+    });
 
     res.status(201).json({
       success: true,
-      message: "Order placed successfully!",
+      message: `${createdOrders.length} order(s) placed successfully!`,
       data: {
-        order: orderResponse,
-        deliveryOtp: deliveryOtp, // OTP only visible to user in response
+        orders: ordersResponse,
+        totalOrders: createdOrders.length,
       },
     });
   } catch (error) {

@@ -10,47 +10,60 @@ import Payment from "../models/payment.models.js";
 import dotenv from "dotenv";
 dotenv.config();
 
-const generateOrderId = async () => {
+const generateOrderId = async (session) => {
   const date = new Date();
   const yyyy = date.getFullYear();
   const mm = String(date.getMonth() + 1).padStart(2, "0");
   const dd = String(date.getDate()).padStart(2, "0");
 
-  const count = await Order.countDocuments({
-    createdAt: { $gte: new Date(yyyy, mm - 1, dd) },
-  });
-  const sequentialId = String(count + 1).padStart(4, "0");
-
-  return `ORD-${yyyy}${mm}${dd}-${sequentialId}`;
+  const datePrefix = `ORD-${yyyy}${mm}${dd}`;
+  
+  // Find the latest order with this date prefix (works within transaction)
+  const latestOrder = await Order.findOne({ 
+    orderId: { $regex: `^${datePrefix}` } 
+  })
+  .sort({ orderId: -1 })
+  .select('orderId')
+  .session(session);
+  
+  let sequentialId = 1;
+  
+  if (latestOrder) {
+    const lastSequence = parseInt(latestOrder.orderId.split('-').pop());
+    sequentialId = lastSequence + 1;
+  }
+  
+  return `${datePrefix}-${String(sequentialId).padStart(4, '0')}`;
 };
 
 // Helper to generate a 6-digit OTP
 const generateDeliveryOtp = () => {
   return Math.floor(100000 + Math.random() * 900000).toString();
 };
-  const generatePaymentId = async () => {
-    const date = new Date();
-    const yyyy = date.getFullYear();
-    const mm = String(date.getMonth() + 1).padStart(2, '0');
-    const dd = String(date.getDate()).padStart(2, '0');
-    
-    const datePrefix = `PAY-${yyyy}${mm}${dd}`;
-    
-    const latestPayment = await Payment.findOne({ 
-      transactionId: { $regex: `^${datePrefix}` } 
-    })
-    .sort({ transactionId: -1 })
-    .select('transactionId');
-    
-    let sequentialId = 1;
-    
-    if (latestPayment) {
-      const lastSequence = parseInt(latestPayment.transactionId.split('-').pop());
-      sequentialId = lastSequence + 1;
-    }
-    
-    return `${datePrefix}-${String(sequentialId).padStart(4, '0')}`;
-  };
+const generatePaymentId = async (session) => {
+  const date = new Date();
+  const yyyy = date.getFullYear();
+  const mm = String(date.getMonth() + 1).padStart(2, '0');
+  const dd = String(date.getDate()).padStart(2, '0');
+  
+  const datePrefix = `PAY-${yyyy}${mm}${dd}`;
+  
+  const latestPayment = await Payment.findOne({ 
+    transactionId: { $regex: `^${datePrefix}` } 
+  })
+  .sort({ transactionId: -1 })
+  .select('transactionId')
+  .session(session); // ADD THIS
+  
+  let sequentialId = 1;
+  
+  if (latestPayment) {
+    const lastSequence = parseInt(latestPayment.transactionId.split('-').pop());
+    sequentialId = lastSequence + 1;
+  }
+  
+  return `${datePrefix}-${String(sequentialId).padStart(4, '0')}`;
+};
 const mapPaymentMethod = (frontendKey) => {
   const map = {
     credit: "Credit Card",
@@ -215,7 +228,12 @@ export const createPendingOrder = async (req, res) => {
   session.startTransaction();
 
   try {
-    const cart = await Cart.findOne({ user: userId }).populate("items.productId").session(session);
+    const cart = await Cart.findOne({ user: userId })
+      .populate({
+        path: "items.productId",
+        populate: { path: "category", model: "Category" }
+      })
+      .session(session);
     const address = await Address.findById(addressId).session(session);
     const user = await User.findById(userId).session(session);
 
@@ -238,9 +256,9 @@ export const createPendingOrder = async (req, res) => {
           `${product.name} only has ${product.stockInPackets} in stock.`
         );
       }
-      
+      console.log(product);
       // Group by delivery window
-      if (product.category === 'vegetables' || product.category === 'fruits') {
+      if (product.category.name === 'Vegetables' || product.category.name === 'Fruits') {
         if (currentHour >= 10) {
           nextDayItems.push(item);
         } else {
@@ -292,7 +310,7 @@ export const createPendingOrder = async (req, res) => {
       });
       
       const immediateOrder = new Order({
-        orderId: await generateOrderId(),
+        orderId: await generateOrderId(session),
         userId: userId,
         items: immediateOrderItems,
         totalAmount: immediateTotal,
@@ -316,7 +334,7 @@ export const createPendingOrder = async (req, res) => {
       const immediatePayment = new Payment({
         orderId: immediateOrder._id,
         userId: userId,
-        transactionId: await generatePaymentId(),
+        transactionId: await generatePaymentId(session),
         amount: immediateTotal,
         status: "PENDING",
         method: mapPaymentMethod(paymentMethod),
@@ -355,7 +373,7 @@ export const createPendingOrder = async (req, res) => {
       });
       
       const nextDayOrder = new Order({
-        orderId: await generateOrderId(),
+        orderId: await generateOrderId(session),
         userId: userId,
         items: nextDayOrderItems,
         totalAmount: nextDayTotal,
@@ -379,7 +397,7 @@ export const createPendingOrder = async (req, res) => {
       const nextDayPayment = new Payment({
         orderId: nextDayOrder._id,
         userId: userId,
-        transactionId: await generatePaymentId(),
+        transactionId: await generatePaymentId(session),
         amount: nextDayTotal,
         status: "PENDING",
         method: mapPaymentMethod(paymentMethod),
