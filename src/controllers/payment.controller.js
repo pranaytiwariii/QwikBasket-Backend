@@ -655,21 +655,40 @@ export const initiateUpiCollectRequest=async(req,res)=>{
       .status(400)
       .json({ success: false, message: "A valid UPI ID is required" });
   }
-  const options = {
+  let user;
+  try {
+    user=await User.findById(userId).select("email phone name");
+  } catch (error) {
+    return res
+    .status(404)
+    .json({ success: false, message: "User not found for this request" });
+  }
+  const linkOptions = {
     amount: amount, 
     currency: currency,
-    receipt: `receipt_order_${new Date().getTime()}`,
-    method: "upi",
-    vpa: upiId,
+    customer: {
+      name: user.name,
+      email: user.email,
+      contact: user.phone,
+      upi_id: upiId, 
+    },
+    notify: {
+      sms: true,
+      email: true,
+    },
+    expire_by: Math.floor(Date.now() / 1000) + 1000,
   };
+  let paymentLink;
   try {
-    const payment = await razorpayInstance.payments.create(options);
-
-    if (!payment) {
-      return res
-        .status(500)
-        .json({ success: false, message: "UPI payment initiation failed" });
-    }
+    paymentLink = await razorpayInstance.paymentLink.create(linkOptions);
+  } catch (error) {
+    console.error("Payment Link Error:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Failed to send UPI request. Check UPI ID.",
+    });
+  }
+  try {
 
     const session = await mongoose.startSession();
     session.startTransaction();
@@ -713,7 +732,7 @@ export const initiateUpiCollectRequest=async(req,res)=>{
         paymentDetails: {
           paymentMethod: "UPI",
           paymentStatus: "Pending",
-          paymentInfo: payment.id, 
+          paymentInfo: paymentLink.id, 
         },
         status: "Pending",
         orderProgress: [
@@ -726,8 +745,8 @@ export const initiateUpiCollectRequest=async(req,res)=>{
       newPayment = new Payment({
         orderId: newOrder._id,
         userId: userId,
-        transactionId: payment.id, 
-        razorpayOrderId: payment.order_id, 
+        transactionId: paymentLink.id, 
+        razorpayOrderId: paymentLink.id, 
         amount: paymentSummary.totalAmount,
         status: "PENDING",
         method: "UPI",
