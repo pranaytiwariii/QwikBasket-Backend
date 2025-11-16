@@ -10,47 +10,60 @@ import Payment from "../models/payment.models.js";
 import dotenv from "dotenv";
 dotenv.config();
 
-const generateOrderId = async () => {
+const generateOrderId = async (session) => {
   const date = new Date();
   const yyyy = date.getFullYear();
   const mm = String(date.getMonth() + 1).padStart(2, "0");
   const dd = String(date.getDate()).padStart(2, "0");
 
-  const count = await Order.countDocuments({
-    createdAt: { $gte: new Date(yyyy, mm - 1, dd) },
-  });
-  const sequentialId = String(count + 1).padStart(4, "0");
-
-  return `ORD-${yyyy}${mm}${dd}-${sequentialId}`;
+  const datePrefix = `ORD-${yyyy}${mm}${dd}`;
+  
+  // Find the latest order with this date prefix (works within transaction)
+  const latestOrder = await Order.findOne({ 
+    orderId: { $regex: `^${datePrefix}` } 
+  })
+  .sort({ orderId: -1 })
+  .select('orderId')
+  .session(session);
+  
+  let sequentialId = 1;
+  
+  if (latestOrder) {
+    const lastSequence = parseInt(latestOrder.orderId.split('-').pop());
+    sequentialId = lastSequence + 1;
+  }
+  
+  return `${datePrefix}-${String(sequentialId).padStart(4, '0')}`;
 };
 
 // Helper to generate a 6-digit OTP
 const generateDeliveryOtp = () => {
   return Math.floor(100000 + Math.random() * 900000).toString();
 };
-  const generatePaymentId = async () => {
-    const date = new Date();
-    const yyyy = date.getFullYear();
-    const mm = String(date.getMonth() + 1).padStart(2, '0');
-    const dd = String(date.getDate()).padStart(2, '0');
-    
-    const datePrefix = `PAY-${yyyy}${mm}${dd}`;
-    
-    const latestPayment = await Payment.findOne({ 
-      transactionId: { $regex: `^${datePrefix}` } 
-    })
-    .sort({ transactionId: -1 })
-    .select('transactionId');
-    
-    let sequentialId = 1;
-    
-    if (latestPayment) {
-      const lastSequence = parseInt(latestPayment.transactionId.split('-').pop());
-      sequentialId = lastSequence + 1;
-    }
-    
-    return `${datePrefix}-${String(sequentialId).padStart(4, '0')}`;
-  };
+const generatePaymentId = async (session) => {
+  const date = new Date();
+  const yyyy = date.getFullYear();
+  const mm = String(date.getMonth() + 1).padStart(2, '0');
+  const dd = String(date.getDate()).padStart(2, '0');
+  
+  const datePrefix = `PAY-${yyyy}${mm}${dd}`;
+  
+  const latestPayment = await Payment.findOne({ 
+    transactionId: { $regex: `^${datePrefix}` } 
+  })
+  .sort({ transactionId: -1 })
+  .select('transactionId')
+  .session(session); // ADD THIS
+  
+  let sequentialId = 1;
+  
+  if (latestPayment) {
+    const lastSequence = parseInt(latestPayment.transactionId.split('-').pop());
+    sequentialId = lastSequence + 1;
+  }
+  
+  return `${datePrefix}-${String(sequentialId).padStart(4, '0')}`;
+};
 const mapPaymentMethod = (frontendKey) => {
   const map = {
     credit: "Credit Card",
@@ -215,33 +228,49 @@ export const createPendingOrder = async (req, res) => {
   session.startTransaction();
 
   try {
-    const cart = await Cart.findOne({ user: userId }).populate("items.productId").session(session);
+    const cart = await Cart.findOne({ user: userId })
+      .populate({
+        path: "items.productId",
+        populate: { path: "category", model: "Category" }
+      })
+      .session(session);
     const address = await Address.findById(addressId).session(session);
     const user = await User.findById(userId).session(session);
 
     if (!cart || cart.items.length === 0) throw new Error("Cart is empty");
     if (!address) throw new Error("Address not found");
     if (!user) throw new Error("User not found");
-
-    const orderItems = cart.items.map(item => {
+    const currentHour = new Date().getHours();
+    const immediateItems = [];
+    const nextDayItems = [];
+    const stockIssues = [];
+    cart.items.forEach((item) => {
       const product = item.productId;
-      let weightInKg = 0;
-
-      if (product.unit === "gms") {
-        weightInKg = product.packagingQuantity / 1000; 
-      } else if (product.unit === "kg" || product.unit === "ltr") {
-        weightInKg = product.packagingQuantity; 
-      } else {
-        throw new Error(`Unsupported unit type: ${product.defaultUnit}`);
+      if (!product) {
+        throw new Error(`Product with ID ${item.productId} not found`);
       }
-      const unitPrice = weightInKg * product.pricePerKg;
-      return {
-        productId: product._id,
-        quantity: item.quantity,
-        price: item.price,
-        name: product.name,
-      };
+      
+      // Validate stock
+      if (product.stockInPackets < item.quantity) {
+        stockIssues.push(
+          `${product.name} only has ${product.stockInPackets} in stock.`
+        );
+      }
+      console.log(product);
+      // Group by delivery window
+      if (product.category.name === 'Vegetables' || product.category.name === 'Fruits') {
+        if (currentHour >= 10) {
+          nextDayItems.push(item);
+        } else {
+          immediateItems.push(item);
+        }
+      } else {
+        immediateItems.push(item);
+      }
     });
+    if (stockIssues.length > 0) {
+      throw new Error(`Stock issue: ${stockIssues.join(", ")}`);
+    }
 
     const shippingAddress = {
       completeAddress: address.completeAddress,
@@ -250,53 +279,155 @@ export const createPendingOrder = async (req, res) => {
       state: address.state,
       landmark: address.landmark,
     };
+    const createdOrders = [];
+    const createdPayments = [];
+    // CREATE FIRST ORDER (Immediate/2-hour delivery)
+    if (immediateItems.length > 0) {
+      const immediateTotal = immediateItems.reduce((sum, item) => 
+        sum + (item.price * item.quantity), 0
+      );
+      
+      const deliveryTime = new Date();
+      deliveryTime.setHours(deliveryTime.getHours() + 2);
+      
+      const immediateOrderItems = immediateItems.map(item => {
+        const product = item.productId;
+        let weightInKg=0;
+        if (product.unit === "gms") {
+          weightInKg = product.packagingQuantity / 1000; 
+        } else if (product.unit === "kg" || product.unit === "ltr") {
+          weightInKg = product.packagingQuantity; 
+        } else {
+          throw new Error(`Unsupported unit type: ${product.unit}`);
+        }
+        
+        return {
+          productId: product._id,
+          quantity: item.quantity,
+          price: item.price,
+          name: product.name,
+        };
+      });
+      
+      const immediateOrder = new Order({
+        orderId: await generateOrderId(session),
+        userId: userId,
+        items: immediateOrderItems,
+        totalAmount: immediateTotal,
+        shippingAddress: shippingAddress,
+        paymentDetails: {
+          paymentMethod: mapPaymentMethod(paymentMethod),
+          paymentStatus: "Pending",
+        },
+        status: "Pending",
+        orderProgress: [{ 
+          status: "Pending", 
+          notes: `Awaiting payment verification - Delivery by ${deliveryTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}` 
+        }],
+        deliveryOtp: generateDeliveryOtp(),
+      });
+      
+      await immediateOrder.save({ session });
+      createdOrders.push(immediateOrder);
+      
+      // Create payment for immediate order
+      const immediatePayment = new Payment({
+        orderId: immediateOrder._id,
+        userId: userId,
+        transactionId: await generatePaymentId(session),
+        amount: immediateTotal,
+        status: "PENDING",
+        method: mapPaymentMethod(paymentMethod),
+        date: new Date(),
+      });
+      await immediatePayment.save({ session });
+      createdPayments.push(immediatePayment);
+    }
 
-    // Generate delivery OTP
-    const deliveryOtp = generateDeliveryOtp();
-
-    const newOrder = new Order({
-      orderId: await generateOrderId(),
-      userId: userId,
-      items: orderItems,
-      totalAmount: paymentSummary.totalAmount,
-      shippingAddress: shippingAddress,
-      paymentDetails: {
-        paymentMethod: mapPaymentMethod(paymentMethod),
-        paymentStatus: "Pending",
-      },
-      status: "Pending",
-      orderProgress: [
-        { status: "Pending", notes: "Awaiting payment verification" }
-      ],
-      deliveryOtp: deliveryOtp,
-    });
-
-    await newOrder.save({ session });
-
-    // Create pending payment
-    const newPayment = new Payment({
-      orderId: newOrder._id,
-      userId: userId,
-      transactionId: await generatePaymentId(),
-      amount: paymentSummary.totalAmount,
-      status: "PENDING",
-      method: mapPaymentMethod(paymentMethod),
-      date: new Date(),
-    });
-
-    await newPayment.save({ session });
+    // CREATE SECOND ORDER (Next day 7-10 AM)
+    if (nextDayItems.length > 0) {
+      const tomorrow = new Date();
+      tomorrow.setDate(tomorrow.getDate() + 1);
+      
+      const nextDayTotal = nextDayItems.reduce((sum, item) => 
+        sum + (item.price * item.quantity), 0
+      );
+      
+      const nextDayOrderItems = nextDayItems.map(item => {
+        const product = item.productId;
+        let weightInKg = 0;
+        if (product.unit === "gms") {
+          weightInKg = product.packagingQuantity / 1000; 
+        } else if (product.unit === "kg" || product.unit === "ltr") {
+          weightInKg = product.packagingQuantity; 
+        } else {
+          throw new Error(`Unsupported unit type: ${product.unit}`);
+        }
+        
+        return {
+          productId: product._id,
+          quantity: item.quantity,
+          price: item.price,
+          name: product.name,
+        };
+      });
+      
+      const nextDayOrder = new Order({
+        orderId: await generateOrderId(session),
+        userId: userId,
+        items: nextDayOrderItems,
+        totalAmount: nextDayTotal,
+        shippingAddress: shippingAddress,
+        paymentDetails: {
+          paymentMethod: mapPaymentMethod(paymentMethod),
+          paymentStatus: "Pending",
+        },
+        status: "Pending",
+        orderProgress: [{ 
+          status: "Pending", 
+          notes: `Awaiting payment verification - Delivery ${tomorrow.toLocaleDateString()}, 7 AM - 10 AM` 
+        }],
+        deliveryOtp: generateDeliveryOtp(),
+      });
+      
+      await nextDayOrder.save({ session });
+      createdOrders.push(nextDayOrder);
+      
+      // Create payment for next day order
+      const nextDayPayment = new Payment({
+        orderId: nextDayOrder._id,
+        userId: userId,
+        transactionId: await generatePaymentId(session),
+        amount: nextDayTotal,
+        status: "PENDING",
+        method: mapPaymentMethod(paymentMethod),
+        date: new Date(),
+      });
+      await nextDayPayment.save({ session });
+      createdPayments.push(nextDayPayment);
+    }
 
     await session.commitTransaction();
 
-    // Create response object without OTP in the order data (for security)
-    const orderResponse = newOrder.toObject();
-    delete orderResponse.deliveryOtp;
+    // Prepare response
+    const ordersResponse = createdOrders.map(order => {
+      const orderObj = order.toObject();
+      const deliveryOtp = orderObj.deliveryOtp;
+      delete orderObj.deliveryOtp;
+      
+      return {
+        order: orderObj,
+        deliveryOtp: deliveryOtp,
+      };
+    });
 
     res.status(201).json({
       success: true,
-      order: orderResponse,
-      payment: newPayment,
-      deliveryOtp: deliveryOtp, // OTP only visible to user in response
+      data: {
+        orders: ordersResponse,
+        payments: createdPayments,
+        totalOrders: createdOrders.length,
+      },
     });
   } catch (error) {
     await session.abortTransaction();
@@ -648,3 +779,136 @@ export const completeCreditPayment = async (req, res) => {
     });
   }
 };
+export const initiateUpiCollectRequest=async(req,res)=>{
+  const { amount, currency, userId, addressId, paymentSummary, upiId } = req.body;
+  if (!upiId || !upiId.includes("@")) {
+    return res
+      .status(400)
+      .json({ success: false, message: "A valid UPI ID is required" });
+  }
+  let user;
+  try {
+    user=await User.findById(userId).select("email phone name");
+  } catch (error) {
+    return res
+    .status(404)
+    .json({ success: false, message: "User not found for this request" });
+  }
+  const linkOptions = {
+    amount: amount, 
+    currency: currency,
+    customer: {
+      name: user.name,
+      email: user.email,
+      contact: user.phone,
+      upi_id: upiId, 
+    },
+    notify: {
+      sms: true,
+      email: true,
+    },
+    expire_by: Math.floor(Date.now() / 1000) + 1000,
+  };
+  let paymentLink;
+  try {
+    paymentLink = await razorpayInstance.paymentLink.create(linkOptions);
+  } catch (error) {
+    console.error("Payment Link Error:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Failed to send UPI request. Check UPI ID.",
+    });
+  }
+  try {
+
+    const session = await mongoose.startSession();
+    session.startTransaction();
+
+    let newOrder;
+    let newPayment;
+    let deliveryOtp;
+
+    try {
+      const cart = await Cart.findOne({ user: userId })
+        .populate("items.productId")
+        .session(session);
+      const address = await Address.findById(addressId).session(session);
+
+      if (!cart || cart.items.length === 0) throw new Error("Cart is empty");
+      if (!address) throw new Error("Address not found");
+
+      const orderItems = cart.items.map((item) => ({
+        productId: item.productId._id,
+        quantity: item.quantity,
+        price: item.price,
+        name: item.productId.name,
+      }));
+
+      const shippingAddress = {
+        completeAddress: address.completeAddress,
+        city: address.city,
+        pincode: address.pincode,
+        state: address.state,
+        landmark: address.landmark,
+      };
+
+      deliveryOtp = generateDeliveryOtp();
+
+      newOrder = new Order({
+        orderId: await generateOrderId(),
+        userId: userId,
+        items: orderItems,
+        totalAmount: paymentSummary.totalAmount,
+        shippingAddress: shippingAddress,
+        paymentDetails: {
+          paymentMethod: "UPI",
+          paymentStatus: "Pending",
+          paymentInfo: paymentLink.id, 
+        },
+        status: "Pending",
+        orderProgress: [
+          { status: "Pending", notes: "Awaiting payment approval from user" },
+        ],
+        deliveryOtp: deliveryOtp,
+      });
+      await newOrder.save({ session });
+
+      newPayment = new Payment({
+        orderId: newOrder._id,
+        userId: userId,
+        transactionId: paymentLink.id, 
+        razorpayOrderId: paymentLink.id, 
+        amount: paymentSummary.totalAmount,
+        status: "PENDING",
+        method: "UPI",
+        date: new Date(),
+      });
+      await newPayment.save({ session });
+
+      await session.commitTransaction();
+    } catch (error) {
+      await session.abortTransaction();
+      throw error; 
+    } finally {
+      session.endSession();
+    }
+
+    const orderResponse = newOrder.toObject();
+    delete orderResponse.deliveryOtp;
+
+    res.status(201).json({
+      success: true,
+      message: "Payment request sent to your UPI ID. Please approve.",
+      order: orderResponse,
+      payment: newPayment,
+      deliveryOtp: deliveryOtp, 
+    });
+  } catch (error) {
+    console.error("UPI Collect Request Error:", error);
+    res.status(500).json({
+      success: false,
+      message: error.message || "Could not initiate UPI payment",
+    });
+  }
+
+}
