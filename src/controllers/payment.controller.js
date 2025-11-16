@@ -648,3 +648,117 @@ export const completeCreditPayment = async (req, res) => {
     });
   }
 };
+export const initiateUpiCollectRequest=async(req,res)=>{
+  const { amount, currency, userId, addressId, paymentSummary, upiId } = req.body;
+  if (!upiId || !upiId.includes("@")) {
+    return res
+      .status(400)
+      .json({ success: false, message: "A valid UPI ID is required" });
+  }
+  const options = {
+    amount: amount, 
+    currency: currency,
+    receipt: `receipt_order_${new Date().getTime()}`,
+    method: "upi",
+    vpa: upiId,
+  };
+  try {
+    const payment = await razorpayInstance.payments.create(options);
+
+    if (!payment) {
+      return res
+        .status(500)
+        .json({ success: false, message: "UPI payment initiation failed" });
+    }
+
+    const session = await mongoose.startSession();
+    session.startTransaction();
+
+    let newOrder;
+    let newPayment;
+    let deliveryOtp;
+
+    try {
+      const cart = await Cart.findOne({ user: userId })
+        .populate("items.productId")
+        .session(session);
+      const address = await Address.findById(addressId).session(session);
+
+      if (!cart || cart.items.length === 0) throw new Error("Cart is empty");
+      if (!address) throw new Error("Address not found");
+
+      const orderItems = cart.items.map((item) => ({
+        productId: item.productId._id,
+        quantity: item.quantity,
+        price: item.price,
+        name: item.productId.name,
+      }));
+
+      const shippingAddress = {
+        completeAddress: address.completeAddress,
+        city: address.city,
+        pincode: address.pincode,
+        state: address.state,
+        landmark: address.landmark,
+      };
+
+      deliveryOtp = generateDeliveryOtp();
+
+      newOrder = new Order({
+        orderId: await generateOrderId(),
+        userId: userId,
+        items: orderItems,
+        totalAmount: paymentSummary.totalAmount,
+        shippingAddress: shippingAddress,
+        paymentDetails: {
+          paymentMethod: "UPI",
+          paymentStatus: "Pending",
+          paymentInfo: payment.id, 
+        },
+        status: "Pending",
+        orderProgress: [
+          { status: "Pending", notes: "Awaiting payment approval from user" },
+        ],
+        deliveryOtp: deliveryOtp,
+      });
+      await newOrder.save({ session });
+
+      newPayment = new Payment({
+        orderId: newOrder._id,
+        userId: userId,
+        transactionId: payment.id, 
+        razorpayOrderId: payment.order_id, 
+        amount: paymentSummary.totalAmount,
+        status: "PENDING",
+        method: "UPI",
+        date: new Date(),
+      });
+      await newPayment.save({ session });
+
+      await session.commitTransaction();
+    } catch (error) {
+      await session.abortTransaction();
+      throw error; 
+    } finally {
+      session.endSession();
+    }
+
+    const orderResponse = newOrder.toObject();
+    delete orderResponse.deliveryOtp;
+
+    res.status(201).json({
+      success: true,
+      message: "Payment request sent to your UPI ID. Please approve.",
+      order: orderResponse,
+      payment: newPayment,
+      deliveryOtp: deliveryOtp, 
+    });
+  } catch (error) {
+    console.error("UPI Collect Request Error:", error);
+    res.status(500).json({
+      success: false,
+      message: error.message || "Could not initiate UPI payment",
+    });
+  }
+
+}
