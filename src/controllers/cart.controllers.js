@@ -2,6 +2,22 @@ import Cart from "../models/cart.models.js";
 import Product from "../models/product.models.js";
 import User from "../models/user.models.js";
 
+const calculateCartDeliveryFee = (subtotal = 0) => {
+  if (!subtotal || subtotal <= 0) {
+    return 35;
+  }
+  if (subtotal < 100) {
+    return 35;
+  }
+  if (subtotal < 200) {
+    return 26;
+  }
+  if (subtotal < 300) {
+    return 12;
+  }
+  return 0;
+};
+
 // Helper function to calculate cart totals
 const calculateCartTotals = async (cart) => {
   await cart.populate("items.productId");
@@ -9,7 +25,8 @@ const calculateCartTotals = async (cart) => {
     const price = item.price;
     return sum + price;
   }, 0);
-  cart.totalAmount = cart.subtotal - cart.couponDiscount;
+  cart.deliveryFee = calculateCartDeliveryFee(cart.subtotal);
+  cart.totalAmount = cart.subtotal - cart.couponDiscount + cart.deliveryFee;
   cart.totalItems = cart.items.length;
   await cart.save();
   return cart;

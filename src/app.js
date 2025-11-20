@@ -18,6 +18,7 @@ import uploadRoutes from "./routes/upload.route.js"
 import pincodeRoutes from "./routes/pincodes.routes.js";
 import deliveryAgentRoutes from "./routes/deliveryAgent.routes.js";
 import offerRoutes from "./routes/offer.routes.js";
+import pickupPointRoutes from "./routes/pickupPoint.routes.js";
 const app = express();
 
 // middlewares
@@ -43,6 +44,7 @@ app.use("/api/upload", uploadRoutes);
 app.use("/api/pincodes", pincodeRoutes);
 app.use("/api/delivery-agents", deliveryAgentRoutes);
 app.use("/api/offers", offerRoutes);
+app.use("/api/pickup-points", pickupPointRoutes);
 
 // Routes
 app.use('/api/health', (req, res) => {
