@@ -121,7 +121,7 @@ export const createOrder = async (req, res) => {
       }
       console.log("CategoryName:",product.category.name);
       if (product.category.name === 'Vegetables' || product.category.name === 'Fruits') {
-        if (currentHour <= 10) {
+        if (currentHour >= 10) {
           nextDayItems.push(item);
           console.log("Yeah boii");
         } else {
