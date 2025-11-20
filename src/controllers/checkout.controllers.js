@@ -6,10 +6,19 @@ import { toTwoDecimalsNoRound, roundUpTo2 } from "../utils/productUtils.js";
 
 // Helper function to calculate the Delivery fees
 const calculateDeliveryFee = (subtotal) => {
-  if (subtotal >= 500) {
-    return 0;
+  if (!subtotal || subtotal <= 0) {
+    return 35;
   }
-  return 50;
+  if (subtotal < 100) {
+    return 35;
+  }
+  if (subtotal < 200) {
+    return 26;
+  }
+  if (subtotal < 300) {
+    return 12;
+  }
+  return 0;
 };
 // Helper function to calculate checkout summary
 const calculateCheckoutSummary = (cart, deliveryFee = null) => {

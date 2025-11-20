@@ -3,7 +3,8 @@ import Order from "../models/order.models.js";
 import Address from "../models/address.models.js";
 import Cart from "../models/cart.models.js";
 import Product from "../models/product.models.js";
-import Payment from "../models/payment.models.js"
+import Payment from "../models/payment.models.js";
+import PickupPoint from "../models/pickupPoint.models.js";
 import BusinessDetails from "../models/businessDetails.models.js";
 import User from "../models/user.models.js";
 // Helper to generate a unique Order ID
@@ -14,47 +15,47 @@ const generateOrderId = async (session) => {
   const dd = String(date.getDate()).padStart(2, "0");
 
   const datePrefix = `ORD-${yyyy}${mm}${dd}`;
-  
+
   // Find the latest order with this date prefix (works within transaction)
-  const latestOrder = await Order.findOne({ 
-    orderId: { $regex: `^${datePrefix}` } 
+  const latestOrder = await Order.findOne({
+    orderId: { $regex: `^${datePrefix}` },
   })
-  .sort({ orderId: -1 })
-  .select('orderId')
-  .session(session);
-  
+    .sort({ orderId: -1 })
+    .select("orderId")
+    .session(session);
+
   let sequentialId = 1;
-  
+
   if (latestOrder) {
-    const lastSequence = parseInt(latestOrder.orderId.split('-').pop());
+    const lastSequence = parseInt(latestOrder.orderId.split("-").pop());
     sequentialId = lastSequence + 1;
   }
-  
-  return `${datePrefix}-${String(sequentialId).padStart(4, '0')}`;
+
+  return `${datePrefix}-${String(sequentialId).padStart(4, "0")}`;
 };
 const generatePaymentId = async (session) => {
   const date = new Date();
   const yyyy = date.getFullYear();
-  const mm = String(date.getMonth() + 1).padStart(2, '0');
-  const dd = String(date.getDate()).padStart(2, '0');
-  
+  const mm = String(date.getMonth() + 1).padStart(2, "0");
+  const dd = String(date.getDate()).padStart(2, "0");
+
   const datePrefix = `PAY-${yyyy}${mm}${dd}`;
-  
-  const latestPayment = await Payment.findOne({ 
-    transactionId: { $regex: `^${datePrefix}` } 
+
+  const latestPayment = await Payment.findOne({
+    transactionId: { $regex: `^${datePrefix}` },
   })
-  .sort({ transactionId: -1 })
-  .select('transactionId')
-  .session(session); // ADD THIS
-  
+    .sort({ transactionId: -1 })
+    .select("transactionId")
+    .session(session); // ADD THIS
+
   let sequentialId = 1;
-  
+
   if (latestPayment) {
-    const lastSequence = parseInt(latestPayment.transactionId.split('-').pop());
+    const lastSequence = parseInt(latestPayment.transactionId.split("-").pop());
     sequentialId = lastSequence + 1;
   }
-  
-  return `${datePrefix}-${String(sequentialId).padStart(4, '0')}`;
+
+  return `${datePrefix}-${String(sequentialId).padStart(4, "0")}`;
 };
 
 // Helper to generate a 6-digit OTP
@@ -76,12 +77,44 @@ const mapPaymentMethod = (frontendKey) => {
 
 // Endpoint 3: POST /api/orders
 export const createOrder = async (req, res) => {
-  const { userId, addressId, paymentMethod, paymentSummary } = req.body;
+  const {
+    userId,
+    addressId,
+    paymentMethod,
+    paymentSummary,
+    fulfillmentType = "DELIVERY",
+    pickupPointId,
+  } = req.body;
 
-  if (!userId || !addressId || !paymentMethod || !paymentSummary) {
+  if (!userId || !paymentMethod || !paymentSummary) {
     return res
       .status(400)
       .json({ success: false, message: "Missing required order details" });
+  }
+
+  const normalizedFulfillmentType =
+    typeof fulfillmentType === "string"
+      ? fulfillmentType.toUpperCase()
+      : "DELIVERY";
+  const isPickup = normalizedFulfillmentType === "PICKUP";
+
+  if (!isPickup && !addressId) {
+    return res
+      .status(400)
+      .json({ success: false, message: "Address is required for delivery" });
+  }
+
+  if (pickupPointId && !mongoose.Types.ObjectId.isValid(pickupPointId)) {
+    return res
+      .status(400)
+      .json({ success: false, message: "Invalid pickupPointId provided" });
+  }
+
+  if (isPickup && !pickupPointId) {
+    return res.status(400).json({
+      success: false,
+      message: "pickupPointId is required for PICKUP orders",
+    });
   }
 
   const session = await mongoose.startSession();
@@ -92,21 +125,35 @@ export const createOrder = async (req, res) => {
     const cart = await Cart.findOne({ user: userId })
       .populate({
         path: "items.productId",
-        populate: { path: "category", model: "Category" }
+        populate: { path: "category", model: "Category" },
       })
       .session(session);
-    const address = await Address.findById(addressId).session(session);
 
     if (!cart || cart.items.length === 0) {
       throw new Error("Cart is empty");
     }
-    if (!address) {
-      throw new Error("Address not found");
+    let address = null;
+    let pickupPoint = null;
+
+    if (isPickup) {
+      pickupPoint = await PickupPoint.findOne({
+        _id: pickupPointId,
+        isActive: true,
+      }).session(session);
+
+      if (!pickupPoint) {
+        throw new Error("Pickup point not found or inactive");
+      }
+    } else {
+      address = await Address.findById(addressId).session(session);
+      if (!address) {
+        throw new Error("Address not found");
+      }
     }
     const currentHour = new Date().getHours();
     const immediateItems = [];
     const nextDayItems = [];
-    console.log("Current Hour",currentHour);
+    console.log("Current Hour", currentHour);
 
     // 2. Re-validate stock one last time
     const stockIssues = [];
@@ -119,8 +166,11 @@ export const createOrder = async (req, res) => {
           `${product.name} only has ${product.stockInPackets} in stock.`
         );
       }
-      console.log("CategoryName:",product.category.name);
-      if (product.category.name === 'Vegetables' || product.category.name === 'Fruits') {
+      console.log("CategoryName:", product.category.name);
+      if (
+        product.category.name === "Vegetables" ||
+        product.category.name === "Fruits"
+      ) {
         if (currentHour <= 10) {
           nextDayItems.push(item);
           console.log("Yeah boii");
@@ -138,24 +188,69 @@ export const createOrder = async (req, res) => {
 
     // 3. Prepare Order document data
     // Match the shippingAddress sub-schema
-    const shippingAddress = {
-      completeAddress: address.completeAddress,
-      city: address.city,
-      pincode: address.pincode,
-      state: address.state,
-      landmark: address.landmark,
+    const shippingAddress = address
+      ? {
+          completeAddress: address.completeAddress,
+          city: address.city,
+          pincode: address.pincode,
+          state: address.state,
+          landmark: address.landmark,
+        }
+      : null;
+    const pickupPointSnapshot = pickupPoint
+      ? {
+          pickupPointId: pickupPoint._id,
+          name: pickupPoint.name,
+          address: pickupPoint.address,
+          phone: pickupPoint.phone,
+          lat: pickupPoint.lat,
+          lng: pickupPoint.lng,
+          notes: pickupPoint.notes,
+        }
+      : null;
+    const parsedDeliveryCharge = Number(paymentSummary?.deliveryFee ?? 0);
+    const deliveryCharge = isPickup
+      ? 0
+      : Number.isNaN(parsedDeliveryCharge)
+      ? 0
+      : parsedDeliveryCharge;
+    const shippingMethod = isPickup ? "Store Pickup" : "Standard Delivery";
+
+    const buildProgressNote = ({ type, deliveryTime, nextDayDate }) => {
+      if (isPickup) {
+        if (type === "NEXT_DAY" && nextDayDate) {
+          return `Pickup scheduled on ${nextDayDate.toLocaleDateString()} at ${
+            pickupPointSnapshot?.name || "Pickup Point"
+          }`;
+        }
+        return `Pickup ready at ${pickupPointSnapshot?.name || "Pickup Point"}`;
+      }
+
+      if (type === "NEXT_DAY" && nextDayDate) {
+        return `Order placed - Delivery ${nextDayDate.toLocaleDateString()}, 7 AM - 10 AM`;
+      }
+
+      if (deliveryTime) {
+        return `Order placed - Delivery by ${deliveryTime.toLocaleTimeString(
+          [],
+          { hour: "2-digit", minute: "2-digit" }
+        )}`;
+      }
+
+      return "Order placed - Pending scheduling";
     };
     const createdOrders = [];
     const createdPayments = [];
     if (immediateItems.length > 0) {
-      const immediateTotal = immediateItems.reduce((sum, item) => 
-        sum + (item.price * item.quantity), 0
+      const immediateTotal = immediateItems.reduce(
+        (sum, item) => sum + item.price * item.quantity,
+        0
       );
-      
+
       const deliveryTime = new Date();
       deliveryTime.setHours(deliveryTime.getHours() + 2);
-      
-      const immediateOrderItems = immediateItems.map(item => ({
+
+      const immediateOrderItems = immediateItems.map((item) => ({
         productId: item.productId._id,
         quantity: item.quantity,
         price: item.price,
@@ -166,16 +261,22 @@ export const createOrder = async (req, res) => {
         userId: userId,
         items: immediateOrderItems,
         totalAmount: immediateTotal,
-        shippingAddress: shippingAddress,
+        ...(shippingAddress ? { shippingAddress } : {}),
+        ...(pickupPointSnapshot ? { pickupPoint: pickupPointSnapshot } : {}),
+        deliveryCharge,
+        fulfillmentType: normalizedFulfillmentType,
+        shippingMethod,
         paymentDetails: {
           paymentMethod: mapPaymentMethod(paymentMethod),
-          paymentStatus: "Pending" ,
+          paymentStatus: "Pending",
         },
         status: "Pending",
-        orderProgress: [{ 
-          status: "Pending", 
-          notes: `Order placed - Delivery by ${deliveryTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}` 
-        }],
+        orderProgress: [
+          {
+            status: "Pending",
+            notes: buildProgressNote({ type: "IMMEDIATE", deliveryTime }),
+          },
+        ],
         deliveryOtp: generateDeliveryOtp(),
       });
       await immediateOrder.save({ session });
@@ -197,39 +298,49 @@ export const createOrder = async (req, res) => {
     if (nextDayItems.length > 0) {
       const tomorrow = new Date();
       tomorrow.setDate(tomorrow.getDate() + 1);
-      
-      const nextDayTotal = nextDayItems.reduce((sum, item) => 
-        sum + (item.price * item.quantity), 0
+
+      const nextDayTotal = nextDayItems.reduce(
+        (sum, item) => sum + item.price * item.quantity,
+        0
       );
-      
-      const nextDayOrderItems = nextDayItems.map(item => ({
+
+      const nextDayOrderItems = nextDayItems.map((item) => ({
         productId: item.productId._id,
         quantity: item.quantity,
         price: item.price,
         name: item.productId.name,
       }));
-      
+
       const nextDayOrder = new Order({
         orderId: await generateOrderId(session),
         userId: userId,
         items: nextDayOrderItems,
         totalAmount: nextDayTotal,
-        shippingAddress: shippingAddress,
+        ...(shippingAddress ? { shippingAddress } : {}),
+        ...(pickupPointSnapshot ? { pickupPoint: pickupPointSnapshot } : {}),
+        deliveryCharge,
+        fulfillmentType: normalizedFulfillmentType,
+        shippingMethod,
         paymentDetails: {
           paymentMethod: mapPaymentMethod(paymentMethod),
           paymentStatus: "Pending",
         },
         status: "Pending",
-        orderProgress: [{ 
-          status: "Pending", 
-          notes: `Order placed - Delivery ${tomorrow.toLocaleDateString()}, 7 AM - 10 AM` 
-        }],
+        orderProgress: [
+          {
+            status: "Pending",
+            notes: buildProgressNote({
+              type: "NEXT_DAY",
+              nextDayDate: tomorrow,
+            }),
+          },
+        ],
         deliveryOtp: generateDeliveryOtp(),
       });
-      
+
       await nextDayOrder.save({ session });
       createdOrders.push(nextDayOrder);
-      
+
       // Create payment record for next day order
       if (mapPaymentMethod(paymentMethod) === "Cash on Delivery") {
         const nextDayPayment = new Payment({
@@ -245,8 +356,8 @@ export const createOrder = async (req, res) => {
         createdPayments.push(nextDayPayment);
       }
     }
-    console.log("Immediate",immediateItems);
-    console.log("nextDay",nextDayItems);
+    console.log("Immediate", immediateItems);
+    console.log("nextDay", nextDayItems);
 
     // 6. Decrement Product stock (using bulkWrite for efficiency)
     const stockUpdates = cart.items.map((item) => ({
@@ -265,11 +376,11 @@ export const createOrder = async (req, res) => {
     await session.commitTransaction();
 
     // Create response object without OTP in the order data (for security)
-    const ordersResponse = createdOrders.map(order => {
+    const ordersResponse = createdOrders.map((order) => {
       const orderObj = order.toObject();
       const deliveryOtp = orderObj.deliveryOtp;
       delete orderObj.deliveryOtp;
-      
+
       return {
         order: orderObj,
         deliveryOtp: deliveryOtp,
@@ -317,6 +428,16 @@ export const getAllOrders = async (req, res) => {
       status: order.status,
       invoiceUrl: order.invoiceUrl || null,
       shippingMethod: order.shippingMethod,
+      fulfillmentType: order.fulfillmentType,
+      deliveryCharge: order.deliveryCharge || 0,
+      pickupPoint: order.pickupPoint
+        ? {
+            id: order.pickupPoint.pickupPointId,
+            name: order.pickupPoint.name,
+            address: order.pickupPoint.address,
+            phone: order.pickupPoint.phone,
+          }
+        : null,
       cardLast4: order.paymentDetails.cardLast4 || "1234",
       productName: order.items[0]?.name || "Multiple Products",
       unitPrice: order.items[0]?.price || 0,
@@ -353,7 +474,7 @@ export const getOrderById = async (req, res) => {
       userId: order.userId,
     });
     const userDetails = await User.findOne({ _id: order.userId });
-    
+
     // Format items with product details
     console.log("==============userDetails==========", userDetails);
     const formattedItems = order.items.map((item) => ({
@@ -390,8 +511,21 @@ export const getOrderById = async (req, res) => {
       status: order.status,
       invoiceUrl: order.invoiceUrl || null,
       shippingMethod: order.shippingMethod,
+      fulfillmentType: order.fulfillmentType,
+      deliveryCharge: order.deliveryCharge || 0,
       cardLast4: order.paymentDetails.cardLast4 || "1234",
       shippingAddress: order.shippingAddress,
+      pickupPoint: order.pickupPoint
+        ? {
+            id: order.pickupPoint.pickupPointId,
+            name: order.pickupPoint.name,
+            address: order.pickupPoint.address,
+            phone: order.pickupPoint.phone,
+            lat: order.pickupPoint.lat,
+            lng: order.pickupPoint.lng,
+            notes: order.pickupPoint.notes,
+          }
+        : null,
       orderProgress: order.orderProgress,
       deliveryOtp: order.deliveryOtp,
       deliveryAgent: order.deliveryAgentId
