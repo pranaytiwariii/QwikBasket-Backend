@@ -4,21 +4,12 @@ import Address from "../models/address.models.js";
 import Category from "../models/category.models.js";
 import { toTwoDecimalsNoRound, roundUpTo2 } from "../utils/productUtils.js";
 
-// Helper function to calculate the Delivery fees
-const calculateDeliveryFee = (subtotal = 0) => {
-  if (subtotal < 100) {
-    return 25;
-  }
-  if (subtotal < 200) {
-    return 18;
-  }
-  return 0;
-};
 // Helper function to calculate checkout summary
 const calculateCheckoutSummary = (cart, deliveryFee = null) => {
   const subtotal = cart.items.reduce((sum, item) => sum + (item.price || 0), 0);
   if (deliveryFee === null) {
-    deliveryFee = calculateDeliveryFee(subtotal);
+    // Use cart.deliveryFee from the cart model
+    deliveryFee = cart.deliveryFee || 0;
   }
   // This will be implemented later
   const couponDiscount = cart.couponDiscount || 0;
@@ -298,7 +289,8 @@ export const getDeliveryFee = async (req, res) => {
       const price = item.productId?.pricePerKg || 0;
       return sum + price * item.quantity;
     }, 0);
-    const deliveryFee = calculateDeliveryFee(subtotal);
+    // Use cart.deliveryFee from the cart model
+    const deliveryFee = cart.deliveryFee || 0;
     res.status(200).json({
       success: true,
       data: {

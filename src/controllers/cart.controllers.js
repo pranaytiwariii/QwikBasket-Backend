@@ -2,7 +2,27 @@ import Cart from "../models/cart.models.js";
 import Product from "../models/product.models.js";
 import User from "../models/user.models.js";
 
-const calculateCartDeliveryFee = (subtotal = 0) => {
+const calculateCartDeliveryFee = (subtotal = 0, items = []) => {
+  // Check if any product in cart has category "vegetables" or "fruits"
+  const hasVegetablesOrFruits = items.some((item) => {
+    const product = item.productId;
+    if (!product || !product.category) return false;
+
+    // Handle both populated category (object) and category ID
+    const categoryName = product.category?.name || product.category;
+    if (typeof categoryName === "string") {
+      const normalizedName = categoryName.toLowerCase().trim();
+      return normalizedName === "vegetables" || normalizedName === "fruits";
+    }
+    return false;
+  });
+
+  // If cart contains vegetables or fruits, delivery fee is 6
+  if (hasVegetablesOrFruits) {
+    return 6;
+  }
+
+  // Otherwise, use existing slabs logic
   if (subtotal < 100) {
     return 25;
   }
@@ -14,12 +34,18 @@ const calculateCartDeliveryFee = (subtotal = 0) => {
 
 // Helper function to calculate cart totals
 const calculateCartTotals = async (cart) => {
-  await cart.populate("items.productId");
+  await cart.populate({
+    path: "items.productId",
+    populate: {
+      path: "category",
+      select: "name",
+    },
+  });
   cart.subtotal = cart.items.reduce((sum, item) => {
     const price = item.price;
     return sum + price;
   }, 0);
-  cart.deliveryFee = calculateCartDeliveryFee(cart.subtotal);
+  cart.deliveryFee = calculateCartDeliveryFee(cart.subtotal, cart.items);
   cart.totalAmount = cart.subtotal - cart.couponDiscount + cart.deliveryFee;
   cart.totalItems = cart.items.length;
   await cart.save();
