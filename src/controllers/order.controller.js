@@ -150,9 +150,11 @@ export const createOrder = async (req, res) => {
         throw new Error("Address not found");
       }
     }
+    const now = new Date();
     const currentHour = new Date().getHours();
     const immediateItems = [];
     const nextDayItems = [];
+    const eveningSlotItems = [];
     console.log("Current Hour", currentHour);
 
     // 2. Re-validate stock one last time
@@ -171,11 +173,12 @@ export const createOrder = async (req, res) => {
         product.category.name === "Vegetables" ||
         product.category.name === "Fruits"
       ) {
-        if (currentHour <= 10) {
-          nextDayItems.push(item);
-          console.log("Yeah boii");
-        } else {
+        if (currentHour >= 0 && currentHour < 7) {
           immediateItems.push(item);
+        } else if (currentHour >= 7 && currentHour < 16) {
+          eveningSlotItems.push(item);
+        } else {
+          nextDayItems.push(item);
         }
       } else {
         immediateItems.push(item);
@@ -281,6 +284,60 @@ export const createOrder = async (req, res) => {
       });
       await immediateOrder.save({ session });
       createdOrders.push(immediateOrder);
+      if (eveningSlotItems.length > 0) {
+        const eveningTotal = eveningSlotItems.reduce(
+          (sum, item) => sum + item.price * item.quantity,
+          0
+        );
+      
+        const eveningOrderItems = eveningSlotItems.map((item) => ({
+          productId: item.productId._id,
+          quantity: item.quantity,
+          price: item.price,
+          name: item.productId.name,
+        }));
+      
+        const eveningOrder = new Order({
+          orderId: await generateOrderId(session),
+          userId: userId,
+          items: eveningOrderItems,
+          totalAmount: eveningTotal,
+          ...(shippingAddress ? { shippingAddress } : {}),
+          ...(pickupPointSnapshot ? { pickupPoint: pickupPointSnapshot } : {}),
+          deliveryCharge,
+          fulfillmentType: normalizedFulfillmentType,
+          shippingMethod,
+          paymentDetails: {
+            paymentMethod: mapPaymentMethod(paymentMethod),
+            paymentStatus: "Pending",
+          },
+          status: "Pending",
+          orderProgress: [
+            {
+              status: "Pending",
+              notes: buildProgressNote({ type: "EVENING_SLOT" }),
+            },
+          ],
+          deliveryOtp: generateDeliveryOtp(),
+        });
+      
+        await eveningOrder.save({ session });
+        createdOrders.push(eveningOrder);
+      
+        if (mapPaymentMethod(paymentMethod) === "Cash on Delivery") {
+          const eveningPayment = new Payment({
+            orderId: eveningOrder._id,
+            userId,
+            transactionId: await generatePaymentId(session),
+            amount: eveningTotal,
+            status: "PENDING",
+            method: "Cash on Delivery",
+            date: new Date(),
+          });
+          await eveningPayment.save({ session });
+          createdPayments.push(eveningPayment);
+        }
+      }
       if (mapPaymentMethod(paymentMethod) === "Cash on Delivery") {
         const immediatePayment = new Payment({
           orderId: immediateOrder._id,
@@ -295,6 +352,7 @@ export const createOrder = async (req, res) => {
         createdPayments.push(immediatePayment);
       }
     }
+    
     if (nextDayItems.length > 0) {
       const tomorrow = new Date();
       tomorrow.setDate(tomorrow.getDate() + 1);
