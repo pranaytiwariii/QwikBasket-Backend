@@ -3,17 +3,11 @@ import Product from "../models/product.models.js";
 import User from "../models/user.models.js";
 
 const calculateCartDeliveryFee = (subtotal = 0) => {
-  if (!subtotal || subtotal <= 0) {
-    return 35;
-  }
   if (subtotal < 100) {
-    return 35;
+    return 25;
   }
   if (subtotal < 200) {
-    return 26;
-  }
-  if (subtotal < 300) {
-    return 12;
+    return 18;
   }
   return 0;
 };

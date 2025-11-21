@@ -5,18 +5,12 @@ import Category from "../models/category.models.js";
 import { toTwoDecimalsNoRound, roundUpTo2 } from "../utils/productUtils.js";
 
 // Helper function to calculate the Delivery fees
-const calculateDeliveryFee = (subtotal) => {
-  if (!subtotal || subtotal <= 0) {
-    return 35;
-  }
+const calculateDeliveryFee = (subtotal = 0) => {
   if (subtotal < 100) {
-    return 35;
+    return 25;
   }
   if (subtotal < 200) {
-    return 26;
-  }
-  if (subtotal < 300) {
-    return 12;
+    return 18;
   }
   return 0;
 };
@@ -310,7 +304,7 @@ export const getDeliveryFee = async (req, res) => {
       data: {
         subtotal: Number(subtotal.toFixed(2)),
         deliveryFee: Number(deliveryFee.toFixed(2)),
-        freeDeliveryThreshold: 500,
+        freeDeliveryThreshold: 200,
         isFreeDelivery: deliveryFee === 0,
       },
     });
