@@ -284,7 +284,7 @@ export const businessDetails = async (req,res) => {
             const detailsData = {
                 userId: id,
                 name,
-                email
+                // email
             };
 
             if (user.customerType === "business") {

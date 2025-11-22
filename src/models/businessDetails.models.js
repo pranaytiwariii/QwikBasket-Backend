@@ -7,24 +7,44 @@ const businessDetailsSchema = new Schema(
       ref: "User",
       required: true,
     },
+
     name: { type: String, required: true },
-    email: { type: String, required: true },
-    businessName: { type: String, required: function() { 
-      // Only required if user is a business customer
-      return this.userId && this.userId.customerType === 'business';
-    }},
+    email: {
+      type: String,
+      required: function () {
+        // Only required if user is a business customer
+        return this.userId && this.userId.customerType === "business";
+      },
+    },
+    businessName: {
+      type: String,
+      required: function () {
+        // Only required if user is a business customer
+        return this.userId && this.userId.customerType === "business";
+      },
+    },
     businessType: {
       type: String,
-      required: function() { 
-        return this.userId && this.userId.customerType === 'business';
+      required: function () {
+        return this.userId && this.userId.customerType === "business";
       },
-      enum: ["restaurant", "canteen", "retailer", "business", "others", "hotel"],
+      enum: [
+        "restaurant",
+        "canteen",
+        "retailer",
+        "business",
+        "others",
+        "hotel",
+      ],
       // lowercase: true,
       // trim: true
     },
-    gstNumber: { type: String, required: function() { 
-      return this.userId && this.userId.customerType === 'business';
-    }},
+    gstNumber: {
+      type: String,
+      required: function () {
+        return this.userId && this.userId.customerType === "business";
+      },
+    },
     fssaiLicense: { type: String },
   },
   {
